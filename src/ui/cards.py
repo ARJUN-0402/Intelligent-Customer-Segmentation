@@ -81,7 +81,7 @@ def persona_card(
         f"""
         <div class="persona-card {selected_cls}" style="--accent:{color};"
              data-persona="{_esc(persona_key)}">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+            <div class="persona-row">
                 <div>
                     <div class="persona-caption" style="font-weight:700;">
                         Segment {segment_id}
@@ -90,9 +90,9 @@ def persona_card(
                         {_esc(persona_name)}
                     </div>
                 </div>
-                <div style="width:12px;height:12px;border-radius:50%;background:{color};"></div>
+                <div class="persona-dot"></div>
             </div>
-            <div style="display:flex;gap:16px;margin-top:12px;">
+            <div class="persona-stats">
                 <div>
                     <div class="persona-stat">{customer_count:,}</div>
                     <div class="persona-caption">customers</div>

@@ -28,7 +28,10 @@ def _detect_theme() -> str:
 # ---------------------------------------------------------------------------
 # Colour palette (light-mode defaults; overridden for dark mode in CSS)
 # ---------------------------------------------------------------------------
+# Primary accent
 PRIMARY: str = "#2563eb"
+
+# Semantic accents (used selectively, not for decoration alone)
 SUCCESS: str = "#16a34a"
 WARNING: str = "#ea580c"
 ERROR: str = "#dc2626"
@@ -36,7 +39,7 @@ PURPLE: str = "#7c3aed"
 TEAL: str = "#0891b2"
 AMBER: str = "#ca8a04"
 
-# Neutral palette
+# Neutral text / surface
 INK: str = "#0f172a"
 MUTED: str = "#64748b"
 TEXT_SECONDARY: str = "#94a3b8"
@@ -102,6 +105,7 @@ COLORWAY = PALETTE
 # ---------------------------------------------------------------------------
 
 def cluster_color_map(personas: dict | None, n_clusters: int) -> list[str]:
+    """Return a colour for each cluster id, falling back to neutrals."""
     colors: list[str] = []
     for cid in range(n_clusters):
         p = personas.get(cid) if personas else None
@@ -279,6 +283,16 @@ def inject_global_styles() -> None:
     .persona-caption {{
         font-size: {TEXT_CAPTION}; color: {c['muted']};
     }}
+    .persona-row {{
+        display: flex; justify-content: space-between; align-items: flex-start;
+    }}
+    .persona-dot {{
+        width: 12px; height: 12px; border-radius: 50%;
+        background: var(--accent, {PRIMARY});
+    }}
+    .persona-stats {{
+        display: flex; gap: 16px; margin-top: 12px;
+    }}
 
     .insight-card {{
         background: {c['paper']}; border: 1px solid {c['border']};
@@ -318,6 +332,12 @@ def inject_global_styles() -> None:
         font-size: {TEXT_BODY}; color: {c['ink']}; margin-top: 8px;
         line-height: 1.5;
     }}
+    .recommendation-list {{
+        margin: 8px 0 0 18px; padding: 0;
+    }}
+    .recommendation-item {{
+        margin-bottom: 4px; font-size: {TEXT_BODY}; color: {c['ink']};
+    }}
 
     .surface-box {{
         background: {c['paper']}; border: 1px solid {c['border']};
@@ -354,43 +374,6 @@ def inject_global_styles() -> None:
     .result-subtitle {{
         font-size: 1.2rem; font-weight: 600; color: var(--accent, {PRIMARY});
         margin-bottom: 10px;
-    }}
-
-    /* ── Component helpers ─────────────────────────────────────── */
-    .status-dot {{
-        display: inline-block; width: 8px; height: 8px;
-        border-radius: 50%; margin-right: 6px;
-    }}
-    .status-label {{
-        font-size: {TEXT_CAPTION}; color: {c['muted']};
-        display: inline-flex; align-items: center; gap: 6px;
-    }}
-    .dataset-meta {{
-        font-size: {TEXT_BODY}; font-weight: 600; color: {c['ink']};
-        margin-left: 16px;
-    }}
-    .dataset-status {{
-        font-size: {TEXT_CAPTION}; color: {c['muted']}; margin-left: 16px;
-        margin-top: 2px;
-    }}
-    .recommendation-list {{
-        margin: 8px 0 0 18px; padding: 0;
-    }}
-    .recommendation-item {{
-        margin-bottom: 4px; font-size: {TEXT_BODY}; color: {c['ink']};
-    }}
-    .empty-state {{
-        text-align: center; padding: 24px 0; color: {c['muted']};
-        font-size: {TEXT_BODY};
-    }}
-    .empty-state-icon {{
-        font-size: 1.5rem; margin-bottom: 8px;
-    }}
-    .empty-state-message {{
-        margin-top: 4px;
-    }}
-    .empty-state-hint {{
-        margin-top: 6px; font-size: {TEXT_CAPTION};
     }}
 
     /* ── App header ───────────────────────────────────────────── */
@@ -463,18 +446,51 @@ def inject_global_styles() -> None:
     .js-plotly-plot .plotly .bg {{
         fill: {c['chart_bg']} !important;
     }}
+
+    /* ── Component helpers ─────────────────────────────────────── */
+    .status-dot {{
+        display: inline-block; width: 8px; height: 8px;
+        border-radius: 50%; margin-right: 6px;
+    }}
+    .status-label {{
+        font-size: {TEXT_CAPTION}; color: {c['muted']};
+        display: inline-flex; align-items: center; gap: 6px;
+    }}
+    .dataset-meta {{
+        font-size: {TEXT_BODY}; font-weight: 600; color: {c['ink']};
+        margin-left: 16px;
+    }}
+    .dataset-status {{
+        font-size: {TEXT_CAPTION}; color: {c['muted']}; margin-left: 16px;
+        margin-top: 2px;
+    }}
+    .empty-state {{
+        text-align: center; padding: 24px 0; color: {c['muted']};
+        font-size: {TEXT_BODY};
+    }}
+    .empty-state-icon {{
+        font-size: 1.5rem; margin-bottom: 8px;
+    }}
+    .empty-state-message {{
+        margin-top: 4px;
+    }}
+    .empty-state-hint {{
+        margin-top: 6px; font-size: {TEXT_CAPTION};
+    }}
     </style>
     """
     st.markdown(css, unsafe_allow_html=True)
 
 
 def fmt_income(value: float | None) -> str:
+    """Format an income value (in thousands) as a dollar string."""
     if value is None:
         return "n/a"
     return f"${float(value):,.1f}k"
 
 
 def fmt_metric(value: float | int | None, digits: int = 3) -> str:
+    """Format a numeric metric, returning a dash for missing / NaN values."""
     import numpy as np
     if value is None or (isinstance(value, float) and np.isnan(value)):
         return "—"

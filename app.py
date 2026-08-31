@@ -865,9 +865,11 @@ def section_overview(base: dict[str, Any], active: dict[str, Any]) -> None:
             color_discrete_map={k: v for k, v in color_map.items()},
             title="",
         )
+        t = styles.get_theme()
+        marker_line_color = "#ffffff" if t["name"] == "dark" else "rgba(255,255,255,0.8)"
         fig.update_traces(
             hovertemplate="%{x}<br>Customers: %{y}<extra></extra>",
-            marker_line_color="white", marker_line_width=1,
+            marker_line_color=marker_line_color, marker_line_width=1,
         )
         fig = charts.style_chart(
             fig, xlabel="Segment", ylabel="Customers", height=380,
@@ -1045,8 +1047,10 @@ def section_analytics(base: dict[str, Any]) -> None:
             color="SegmentLabel", title="Customer Segments in 3D",
             color_discrete_sequence=PALETTE, opacity=0.85,
         )
+        t = styles.get_theme()
+        marker_line_color = "#ffffff" if t["name"] == "dark" else "rgba(255,255,255,0.8)"
         fig3d.update_traces(
-            marker=dict(size=5, line=dict(width=0.3, color="white"))
+            marker=dict(size=5, line=dict(width=0.3, color=marker_line_color))
         )
         fig3d = charts.style_chart(fig3d, height=500)
         fig3d.update_layout(
@@ -1310,11 +1314,16 @@ def section_comparison(base: dict[str, Any]) -> None:
     # ------------------------------------------------------------------ #
     st.markdown("##### Active Configuration Metrics")
     st.caption(f"Quality metrics for the deployed {alg_display(cfg['algorithm'])} model.")
-    m1, m2, m3, m4 = st.columns(4)
+    m1, m2 = st.columns(2)
     with m1:
         cards.metric_card(
             "Silhouette Score", f"{styles.fmt_metric(active.get('silhouette'), 3)}",
             "Higher is better",
+        )
+        db = active.get("davies_bouldin")
+        cards.metric_card(
+            "Davies-Bouldin", f"{styles.fmt_metric(db, 3)}",
+            "Lower is better",
         )
     with m2:
         ch = active.get("calinski_harabasz")
@@ -1322,13 +1331,6 @@ def section_comparison(base: dict[str, Any]) -> None:
             "Calinski-Harabasz", f"{styles.fmt_metric(ch, 1)}",
             "Higher is better", "Requires ≥ 2 segments",
         )
-    with m3:
-        db = active.get("davies_bouldin")
-        cards.metric_card(
-            "Davies-Bouldin", f"{styles.fmt_metric(db, 3)}",
-            "Lower is better",
-        )
-    with m4:
         inertia = active.get("inertia")
         note = "K-Means only" if inertia is None else ""
         cards.metric_card(
@@ -1353,8 +1355,10 @@ def section_comparison(base: dict[str, Any]) -> None:
         if c in comp_df.columns and pd.api.types.is_numeric_dtype(comp_df[c])
     ]
     if metric_cols:
+        t = styles.get_theme()
+        bar_bg = "#cbd5e1" if t["name"] == "light" else "#475569"
         styler = disp_df.style.format({c: "{:.3f}" for c in metric_cols})
-        styler = styler.bar(subset=metric_cols, color="#e2e8f0", height=1.0)
+        styler = styler.bar(subset=metric_cols, color=bar_bg, height=1.0)
         st.dataframe(styler, width="stretch", hide_index=True)
     else:
         cards.styled_metric_table(disp_df)
@@ -1458,14 +1462,12 @@ def section_comparison(base: dict[str, Any]) -> None:
             from src.analytics import compute_cluster_stability
             try:
                 stab = compute_cluster_stability(X, n_clusters=5, n_runs=10)
-                sc1, sc2, sc3, sc4 = st.columns(4)
+                sc1, sc2 = st.columns(2)
                 with sc1:
                     cards.kpi_card("Mean ARI", f"{stab.mean_ari:.3f}", "Across 10 runs", SUCCESS)
+                    cards.kpi_card("Max ARI", f"{stab.max_ari:.3f}", "Best agreement", PRIMARY)
                 with sc2:
                     cards.kpi_card("Min ARI", f"{stab.min_ari:.3f}", "Worst agreement", ERROR)
-                with sc3:
-                    cards.kpi_card("Max ARI", f"{stab.max_ari:.3f}", "Best agreement", PRIMARY)
-                with sc4:
                     cards.kpi_card("Std ARI", f"{stab.std_ari:.3f}", "Variability", PURPLE)
                 components.info_box(stab.interpretation)
             except Exception as exc:
@@ -1571,23 +1573,21 @@ def section_explorer(base: dict[str, Any], active: dict[str, Any]) -> None:
         avg_age = float(stats.loc[selection, "avg_age"])
         top_genre = str(stats.loc[selection, "top_genre"])
 
-        k1, k2, k3, k4 = st.columns(4)
+        k1, k2 = st.columns(2)
         with k1:
             cards.kpi_card(
                 "Customers", f"{prof.customer_count:,}",
                 f"{prof.percentage}% of base", color,
+            )
+            cards.kpi_card(
+                "Avg Spending", f"{avg_spending:,.1f}",
+                "score (1-100)", PURPLE,
             )
         with k2:
             cards.kpi_card(
                 "Avg Income", styles.fmt_income(avg_income),
                 "per customer", WARNING,
             )
-        with k3:
-            cards.kpi_card(
-                "Avg Spending", f"{avg_spending:,.1f}",
-                "score (1-100)", PURPLE,
-            )
-        with k4:
             cards.kpi_card(
                 "Avg Age", f"{avg_age:,.0f}",
                 f"top gender: {top_genre}", TEAL,

@@ -59,6 +59,7 @@ from src.utils import (
     MAX_K,
     MIN_K,
     MODEL_FILENAME,
+    MODEL_PATH,
     MODEL_VERSION,
     MODELS_DIR,
     SPENDING_SCORE,
@@ -91,8 +92,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "eps": DEFAULT_EPS,
     "min_samples": DEFAULT_MIN_SAMPLES,
 }
-
-MODEL_PATH = MODELS_DIR / MODEL_FILENAME
 
 # Business-friendly column display names.
 DISPLAY = {
@@ -354,6 +353,47 @@ def train_bundle(base: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
     return bundle
 
 
+def _validate_bundle(bundle: Any) -> Optional[str]:
+    """Validate a loaded prediction bundle.
+
+    Returns ``None`` if valid, otherwise a human-readable reason describing the
+    first failure. Validates artifact structure, version, preprocessing config,
+    feature names, algorithm, cluster count, and persona mapping.
+    """
+    if not isinstance(bundle, dict):
+        return f"bundle is not a dict (got {type(bundle).__name__})"
+    required = {"pre", "scaled_centers", "centers_orig", "personas",
+               "algorithm", "config", "model_version"}
+    missing = required - set(bundle.keys())
+    if missing:
+        return f"missing keys: {sorted(missing)}"
+    if bundle.get("model_version") != MODEL_VERSION:
+        return (f"model_version mismatch: artifact={bundle.get('model_version')!r}, "
+                f"current={MODEL_VERSION!r}")
+    pre = bundle.get("pre")
+    if pre is None or getattr(pre, "transformer_", None) is None:
+        return "preprocessor is not fitted"
+    try:
+        feat_names = list(pre.output_feature_names)
+    except Exception as exc:  # noqa: BLE001
+        return f"cannot read preprocessor feature names: {exc}"
+    expected = list(FEATURE_COLUMNS)
+    if feat_names != expected:
+        return (f"feature names mismatch: artifact={feat_names}, "
+                f"current={expected}")
+    if bundle.get("algorithm") not in ALGORITHMS:
+        return f"unknown algorithm in bundle: {bundle.get('algorithm')!r}"
+    centers = bundle.get("scaled_centers")
+    if centers is None or len(centers) == 0:
+        return "bundle has no cluster centres"
+    n_centers = int(len(centers))
+    personas = bundle.get("personas") or {}
+    if n_centers != len(personas):
+        return (f"cluster/ persona count mismatch: "
+                f"centers={n_centers}, personas={len(personas)}")
+    return None
+
+
 @st.cache_resource(show_spinner="Loading prediction model...")
 def load_prediction_model() -> Optional[dict[str, Any]]:
     """Load the persisted prediction model, training + saving it if absent."""
@@ -363,24 +403,27 @@ def load_prediction_model() -> Optional[dict[str, Any]]:
     if MODEL_PATH.exists():
         try:
             bundle = joblib.load(MODEL_PATH)
-            bundle_version = bundle.get("model_version") if isinstance(bundle, dict) else None
-            if bundle_version != MODEL_VERSION:
-                logger.warning(
-                    "Model version mismatch: artifact=%s, current=%s. Retraining.",
-                    bundle_version, MODEL_VERSION,
-                )
-                bundle = None
-            elif not isinstance(bundle, dict) or "pre" not in bundle:
-                logger.error("Model artifact has unexpected format; retraining.")
-                bundle = None
-            else:
-                logger.info("Loaded prediction model from %s (version %s)", MODEL_PATH.name, bundle_version)
-                return bundle
         except Exception as exc:  # noqa: BLE001
             logger.error("Failed to load model artifact %s: %s", MODEL_PATH, exc)
             bundle = None
+        else:
+            reason = _validate_bundle(bundle)
+            if reason is None:
+                logger.info(
+                    "Loaded prediction model from %s (version %s)",
+                    MODEL_PATH.name, bundle.get("model_version"),
+                )
+                return bundle
+            logger.warning(
+                "Discarding incompatible model artifact %s: %s",
+                MODEL_PATH.name, reason,
+            )
+            bundle = None
     else:
-        logger.info("No model artifact found at %s; training new bundle.", MODEL_PATH)
+        logger.warning(
+            "No model artifact found at %s; training new bundle at runtime.",
+            MODEL_PATH,
+        )
         bundle = None
 
     if bundle is None:
@@ -862,9 +905,24 @@ def section_lab(base: dict[str, Any]) -> None:
 
     params: dict[str, Any] = {"algorithm": algorithm}
     if algorithm in ("kmeans", "agglomerative", "gmm"):
+        n_samples = len(base["cleaned"])
+        max_valid_k = max(MIN_K, min(MAX_K, max(1, n_samples // 5)))
+        slider_max = max(cfg["n_clusters"], max_valid_k)
         params["n_clusters"] = st.slider(
             "Number of segments (k)",
-            min_value=MIN_K, max_value=MAX_K, value=cfg["n_clusters"],
+            min_value=MIN_K,
+            max_value=slider_max,
+            value=min(max(cfg["n_clusters"], MIN_K), slider_max),
+            help=(
+                f"Technically valid for {n_samples} samples: 2-{max_valid_k}. "
+                f"Analytically recommended: see the silhouette analysis in "
+                f"Model Comparison (typically 5-6 for this dataset)."
+            ),
+        )
+        st.caption(
+            f"Valid range for {n_samples} customers: **{MIN_K}-{max_valid_k}**. "
+            "A larger k does not automatically give better segments; check the "
+            "silhouette score and elbow in **Model Comparison**."
         )
     if algorithm == "agglomerative":
         params["linkage"] = st.selectbox(

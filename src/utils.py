@@ -69,6 +69,7 @@ LABEL_MAP: dict[str, str] = {
 # ---------------------------------------------------------------------------
 MODEL_VERSION: str = "0.2.0"
 MODEL_FILENAME: str = "segmentation_model.joblib"
+MODEL_PATH: Path = MODELS_DIR / MODEL_FILENAME
 
 # ---------------------------------------------------------------------------
 # Algorithm defaults

@@ -527,7 +527,7 @@ def style_chart(
 
 def styled_metric_table(df: pd.DataFrame) -> None:
     """Render a dataframe with light styling (no emoji clutter)."""
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.dataframe(df, width="stretch", hide_index=True)
 
 
 def show_error(msg: str, hint: str = "") -> None:
@@ -713,7 +713,7 @@ def section_analytics(base: dict[str, Any]) -> None:
         )
         fig.update_traces(hovertemplate="Age: %{x}<br>Customers: %{y}<extra></extra>")
         fig = style_chart(fig, xlabel="Age (years)", ylabel="Customers")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     with d2:
         fig = px.histogram(
             raw, x=ANNUAL_INCOME, nbins=20, color_discrete_sequence=["#ea580c"],
@@ -721,7 +721,7 @@ def section_analytics(base: dict[str, Any]) -> None:
         )
         fig.update_traces(hovertemplate="Income: %{x} k$<br>Customers: %{y}<extra></extra>")
         fig = style_chart(fig, xlabel="Annual Income (k$)", ylabel="Customers")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     with d3:
         fig = px.histogram(
             raw, x=SPENDING_SCORE, nbins=20, color_discrete_sequence=["#7c3aed"],
@@ -729,7 +729,7 @@ def section_analytics(base: dict[str, Any]) -> None:
         )
         fig.update_traces(hovertemplate="Score: %{x}<br>Customers: %{y}<extra></extra>")
         fig = style_chart(fig, xlabel="Spending Score (1-100)", ylabel="Customers")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     st.markdown("##### Composition & Relationships")
     r1, r2 = st.columns(2)
@@ -747,7 +747,7 @@ def section_analytics(base: dict[str, Any]) -> None:
         fig = style_chart(fig, height=380)
         fig.update_layout(showlegend=True, legend=dict(orientation="h",
                               yanchor="bottom", y=-0.1, xanchor="center", x=0.5))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     with r2:
         corr = raw[[AGE, ANNUAL_INCOME, SPENDING_SCORE]].corr().round(2)
         corr.columns = ["Age", "Income", "Spending"]
@@ -759,7 +759,7 @@ def section_analytics(base: dict[str, Any]) -> None:
         fig.update_traces(hovertemplate="%{y} vs %{x}<br>Correlation: %{z}<extra></extra>")
         fig.update_coloraxes(colorbar_title="Correlation")
         fig = style_chart(fig, height=380)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     st.markdown("##### Feature Relationships")
     rel_mode = st.radio(
@@ -797,7 +797,7 @@ def section_analytics(base: dict[str, Any]) -> None:
         ),
     )
     fig = style_chart(fig, xlabel="Annual Income (k$)", ylabel="Spending Score (1-100)")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     # 3D scatter (Age, Income, Spending) coloured by segment when available.
     st.markdown("##### 3D Cluster View")
@@ -832,7 +832,7 @@ def section_analytics(base: dict[str, Any]) -> None:
             zaxis_title="Spending Score (1-100)",
         ),
     )
-    st.plotly_chart(fig3d, use_container_width=True)
+    st.plotly_chart(fig3d, width="stretch")
 
 
 # ===========================================================================
@@ -957,7 +957,7 @@ def section_lab(base: dict[str, Any]) -> None:
             )
         )
     fig = style_chart(fig, xlabel="Annual Income (k$)", ylabel="Spending Score (1-100)")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     c1, c2 = st.columns(2)
     with c1:
@@ -974,7 +974,7 @@ def section_lab(base: dict[str, Any]) -> None:
         )
         fig = style_chart(fig, height=320, xlabel="Segment", ylabel="Customers")
         fig.update_layout(showlegend=False)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     with c2:
         st.markdown("###### Model Metrics")
         metrics: dict[str, Any] = {}
@@ -1220,7 +1220,7 @@ def section_comparison(base: dict[str, Any]) -> None:
         yaxis2=dict(title="Silhouette", overlaying="y", side="right",
                     showgrid=False),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     st.info(
         f"Based on the silhouette analysis, the optimal number of segments is "

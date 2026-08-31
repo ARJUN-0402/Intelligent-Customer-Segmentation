@@ -21,7 +21,8 @@ from sklearn.metrics import silhouette_score
 from sklearn.mixture import GaussianMixture
 
 from .utils import (
-    ANNUAL_INCOME,
+    DEFAULT_EPS,
+    DEFAULT_MIN_SAMPLES,
     DEFAULT_N_CLUSTERS,
     DEFAULT_RANDOM_STATE,
     FIGURES_DIR,
@@ -29,7 +30,6 @@ from .utils import (
     MAX_K,
     MIN_K,
     N_INIT,
-    SPENDING_SCORE,
     ensure_directory,
 )
 
@@ -221,8 +221,8 @@ def run_agglomerative(
 # DBSCAN
 # ---------------------------------------------------------------------------
 def build_dbscan(
-    eps: float = 0.5,
-    min_samples: int = 5,
+    eps: float = DEFAULT_EPS,
+    min_samples: int = DEFAULT_MIN_SAMPLES,
     metric: str = "euclidean",
 ) -> DBSCAN:
     """Return a configured :class:`~sklearn.cluster.DBSCAN` estimator."""
@@ -231,8 +231,8 @@ def build_dbscan(
 
 def run_dbscan(
     X: np.ndarray,
-    eps: float = 0.5,
-    min_samples: int = 5,
+    eps: float = DEFAULT_EPS,
+    min_samples: int = DEFAULT_MIN_SAMPLES,
     metric: str = "euclidean",
 ) -> ClusterResult:
     """Fit DBSCAN on *X* and return a :class:`ClusterResult`."""
@@ -356,7 +356,7 @@ def run_clustering(
     -------
     ClusterResult
     """
-    key = algorithm.lower().replace("-", "_").replace("_", "")
+    key = algorithm.lower().replace("-", "_").replace(" ", "_").replace("_", "")
     if key not in ALGORITHMS:
         raise ValueError(
             f"Unknown algorithm {algorithm!r}. "
@@ -514,4 +514,117 @@ def plot_clusters(
     fig.savefig(dest, dpi=150, bbox_inches="tight")
     plt.close(fig)
     logger.info("Saved cluster scatter plot to %s", dest)
+    return dest
+
+
+def plot_clusters_3d(
+    X_scaled: np.ndarray,
+    result: ClusterResult,
+    feature_names: Optional[list[str]] = None,
+    dims: tuple[int, int, int] = (0, 1, 2),
+    save_path: Optional[Path] = None,
+) -> Optional[Path]:
+    """3D scatter-plot of up to three features coloured by cluster.
+
+    Parameters
+    ----------
+    X_scaled:
+        Scaled feature matrix.
+    result:
+        Clustering result with labels and optional centres.
+    feature_names:
+        Names for each feature dimension.
+    dims:
+        Three column indices to plot (x, y, z).
+    save_path:
+        Destination path.  Defaults to ``outputs/figures/clusters_3d.png``.
+
+    Returns
+    -------
+    Path or None
+        The saved figure path, or ``None`` if the data has fewer than three
+        usable dimensions.
+    """
+    if X_scaled.shape[1] < 3:
+        logger.warning("3D plot requires at least 3 feature dimensions; got %d.", X_scaled.shape[1])
+        return None
+
+    xi, yi, zi = dims
+    if max(dims) >= X_scaled.shape[1]:
+        logger.warning("Dimension indices %s exceed feature count %d.", dims, X_scaled.shape[1])
+        return None
+
+    names = feature_names or result.feature_names or [f"F{i + 1}" for i in range(X_scaled.shape[1])]
+    x_label = LABEL_MAP.get(names[xi], names[xi])
+    y_label = LABEL_MAP.get(names[yi], names[yi])
+    z_label = LABEL_MAP.get(names[zi], names[zi])
+
+    try:
+        import matplotlib.pyplot as plt
+        from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 - used in plot_clusters_3d
+    except ImportError:
+        logger.error("matplotlib 3D toolkit is required for 3D plots.")
+        return None
+
+    fig = plt.figure(figsize=(12, 9))
+    ax = fig.add_subplot(111, projection="3d")
+
+    unique = result.unique_labels
+    n_colors = len(unique)
+    palette = plt.cm.Set1(np.linspace(0, 1, max(n_colors, 1)))
+
+    for i, label in enumerate(sorted(unique)):
+        mask = result.labels == label
+        if label == -1:
+            ax.scatter(
+                X_scaled[mask, xi],
+                X_scaled[mask, yi],
+                X_scaled[mask, zi],
+                s=40,
+                c="gray",
+                marker="x",
+                label="Noise",
+                depthshade=True,
+            )
+        else:
+            ax.scatter(
+                X_scaled[mask, xi],
+                X_scaled[mask, yi],
+                X_scaled[mask, zi],
+                s=80,
+                c=[palette[i]],
+                label=f"Cluster {int(label) + 1}",
+                edgecolors="black",
+                linewidth=0.4,
+                depthshade=True,
+            )
+
+    if result.cluster_centers is not None:
+        valid = result.cluster_centers[
+            ~np.isnan(result.cluster_centers).any(axis=1)
+        ]
+        if len(valid) and max(dims) < valid.shape[1]:
+            ax.scatter(
+                valid[:, xi],
+                valid[:, yi],
+                valid[:, zi],
+                s=250,
+                c="yellow",
+                edgecolors="black",
+                linewidth=1.2,
+                label="Centroids",
+                depthshade=True,
+            )
+
+    ax.set_title(f"3D Clusters ({result.algorithm})")
+    ax.set_xlabel(f"{x_label} (scaled)")
+    ax.set_ylabel(f"{y_label} (scaled)")
+    ax.set_zlabel(f"{z_label} (scaled)")
+    ax.legend()
+
+    dest = save_path or FIGURES_DIR / "clusters_3d.png"
+    ensure_directory(dest.parent)
+    fig.savefig(dest, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    logger.info("Saved 3D cluster plot to %s", dest)
     return dest

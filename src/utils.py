@@ -64,6 +64,19 @@ LABEL_MAP: dict[str, str] = {
     SPENDING_SCORE: "Spending Score (1-100)",
 }
 
+# ---------------------------------------------------------------------------
+# Model artifact versioning
+# ---------------------------------------------------------------------------
+MODEL_VERSION: str = "0.2.0"
+MODEL_FILENAME: str = "segmentation_model.joblib"
+
+# ---------------------------------------------------------------------------
+# Algorithm defaults
+# ---------------------------------------------------------------------------
+DEFAULT_LINKAGE: str = "ward"
+DEFAULT_EPS: float = 0.5
+DEFAULT_MIN_SAMPLES: int = 4
+
 
 def setup_logging(level: int = logging.INFO) -> logging.Logger:
     """Configure and return a project-level logger.

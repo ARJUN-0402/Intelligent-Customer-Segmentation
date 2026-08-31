@@ -15,6 +15,7 @@ __all__: list[str] = [
     "evaluation",
     "personas",
     "business_insights",
+    "analytics",
 ]
 
 __version__: str = "0.2.0"

@@ -50,15 +50,29 @@ from src.utils import (
     ANNUAL_INCOME,
     CUSTOMER_ID,
     DEFAULT_DATA_PATH,
+    DEFAULT_EPS,
+    DEFAULT_LINKAGE,
+    DEFAULT_MIN_SAMPLES,
     DEFAULT_RANDOM_STATE,
     FEATURE_COLUMNS,
     GENRE,
     MAX_K,
     MIN_K,
+    MODEL_FILENAME,
+    MODEL_VERSION,
     MODELS_DIR,
     SPENDING_SCORE,
     ensure_directory,
+    setup_logging,
 )
+
+logger = setup_logging()
+
+
+def _suppress_warnings():
+    """Context manager that suppresses sklearn/convergence warnings."""
+    return warnings.catch_warnings()
+
 
 # ---------------------------------------------------------------------------
 # Constants / configuration
@@ -73,12 +87,12 @@ ALGORITHMS = {
 DEFAULT_CONFIG: dict[str, Any] = {
     "algorithm": "kmeans",
     "n_clusters": 5,
-    "linkage": "ward",
-    "eps": 0.5,
-    "min_samples": 4,
+    "linkage": DEFAULT_LINKAGE,
+    "eps": DEFAULT_EPS,
+    "min_samples": DEFAULT_MIN_SAMPLES,
 }
 
-MODEL_PATH = MODELS_DIR / "segmentation_model.joblib"
+MODEL_PATH = MODELS_DIR / MODEL_FILENAME
 
 # Business-friendly column display names.
 DISPLAY = {
@@ -88,11 +102,28 @@ DISPLAY = {
     GENRE: "Gender",
 }
 
+# Restrained, professional palette (blue primary + selective accents).
 PALETTE = [
-    "#2563eb", "#16a34a", "#dc2626", "#9333ea",
+    "#2563eb", "#16a34a", "#dc2626", "#7c3aed",
     "#ea580c", "#0891b2", "#ca8a04", "#db2777",
 ]
 
+# Stable persona identity colours (keyed by persona.key from src/personas.py).
+PERSONA_COLORS = {
+    "vip": "#16a34a",
+    "saver": "#2563eb",
+    "impulsive": "#dc2626",
+    "budget": "#7c3aed",
+    "mainstream": "#ea580c",
+}
+
+PRIMARY = "#2563eb"
+INK = "#0f172a"
+MUTED = "#64748b"
+BORDER = "#e2e8f0"
+SURFACE = "#f8fafc"
+
+CHART_FONT = "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
 
 # ===========================================================================
 # Cached data access
@@ -107,7 +138,9 @@ def get_base() -> dict[str, Any]:
     """
     try:
         raw = load_data(DEFAULT_DATA_PATH)
+        logger.info("Dataset loaded successfully: %d rows, %d columns", len(raw), len(raw.columns))
     except Exception as exc:  # noqa: BLE001 - surface a clean message
+        logger.error("Failed to load dataset: %s", exc)
         return {"error": str(exc)}
 
     pre = CustomerDataPreprocessor(
@@ -115,9 +148,10 @@ def get_base() -> dict[str, Any]:
         categorical_features=[],
         drop_duplicates=True,
     )
-    with warnings.catch_warnings():
+    with _suppress_warnings():
         warnings.simplefilter("ignore")
         X, cleaned = pre.fit_transform(raw)
+    logger.info("Preprocessing complete: %d samples, %d features", X.shape[0], X.shape[1])
     return {"raw": raw, "X": X, "cleaned": cleaned, "pre": pre, "error": None}
 
 
@@ -156,47 +190,95 @@ def _cfg_key(cfg: dict[str, Any]) -> tuple:
 
 
 def compute_segmentation(base: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
-    """Run the active clustering configuration and derive personas/profiles."""
+    """Run the active clustering configuration and derive personas/profiles/analytics."""
+    from src.analytics import (
+        compare_segments_vs_overall,
+        generate_analytical_insights,
+        compute_cluster_stability,
+        compute_feature_separation,
+    )
+
     X = base["X"]
     cleaned = base["cleaned"]
     pre = base["pre"]
 
-    with warnings.catch_warnings():
+    with _suppress_warnings():
         warnings.simplefilter("ignore")
         try:
             result = run_clustering(X, algorithm=cfg["algorithm"], **_build_kwargs(cfg))
         except Exception as exc:  # noqa: BLE001
+            logger.error("Clustering failed for %s: %s", cfg["algorithm"], exc)
             return {"error": str(exc), "algorithm": cfg["algorithm"]}
 
     result.feature_names = pre.output_feature_names
+    logger.info(
+        "Clustering complete: algorithm=%s, n_clusters=%d, valid=%s",
+        result.algorithm, result.n_clusters, result.valid,
+    )
 
     centers_orig: Optional[pd.DataFrame] = None
     if result.cluster_centers is not None:
         try:
             centers_orig = pre.inverse_transform_centers(result.cluster_centers)
-        except Exception:  # noqa: BLE001
+            logger.info("Inverse-transformed %d cluster centres to original scale", len(centers_orig))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to inverse-transform centres: %s", exc)
             centers_orig = None
 
     personas: dict[int, Any] = {}
     if centers_orig is not None and len(centers_orig):
         try:
             personas = assign_personas_from_data(centers_orig, cleaned)
-        except Exception:  # noqa: BLE001
+            logger.info("Assigned %d personas to clusters", len(personas))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Persona assignment failed: %s", exc)
             personas = {}
 
-    # Metrics (silhouette is the one we surface everywhere).
     from src.evaluation import evaluate_model
 
-    with warnings.catch_warnings():
+    with _suppress_warnings():
         warnings.simplefilter("ignore")
         eval_res = evaluate_model(X, result)
     sil = eval_res.metrics["Silhouette Score"].value
 
     profiles: list[Any] = []
+    profiles_df: Optional[pd.DataFrame] = None
     if personas:
         profiles = build_persona_profiles(
             cleaned, result.labels, cluster_centers=centers_orig, personas=personas
         )
+        try:
+            profiles_df = build_cluster_profiles(cleaned, result.labels)
+        except Exception:  # noqa: BLE001
+            profiles_df = None
+
+    # Analytics
+    segment_comparison: list[Any] = []
+    feature_separation: list[Any] = []
+    stability: Optional[Any] = None
+    analytical_insights: list[Any] = []
+
+    if profiles_df is not None and not profiles_df.empty:
+        try:
+            segment_comparison = compare_segments_vs_overall(cleaned, result.labels)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Segment comparison failed: %s", exc)
+        try:
+            feature_separation = compute_feature_separation(cleaned, result.labels)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Feature separation failed: %s", exc)
+        if cfg["algorithm"] == "kmeans":
+            try:
+                stability = compute_cluster_stability(X, n_clusters=result.n_clusters)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Cluster stability analysis failed: %s", exc)
+        try:
+            analytical_insights = generate_analytical_insights(
+                profiles_df, centers_orig if centers_orig is not None else pd.DataFrame(),
+                result.labels, cleaned,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Analytical insights generation failed: %s", exc)
 
     return {
         "error": None,
@@ -210,6 +292,11 @@ def compute_segmentation(base: dict[str, Any], cfg: dict[str, Any]) -> dict[str,
         "noise": result.noise_points,
         "valid": result.valid,
         "inertia": result.inertia,
+        "profiles_df": profiles_df,
+        "segment_comparison": segment_comparison,
+        "feature_separation": feature_separation,
+        "stability": stability,
+        "analytical_insights": analytical_insights,
     }
 
 
@@ -236,7 +323,7 @@ def get_active(base: dict[str, Any]) -> dict[str, Any]:
 def train_bundle(base: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
     """Train and return a portable model bundle for new-customer prediction."""
     pre = base["pre"]
-    with warnings.catch_warnings():
+    with _suppress_warnings():
         warnings.simplefilter("ignore")
         result = run_clustering(
             base["X"], algorithm=cfg["algorithm"], **_build_kwargs(cfg)
@@ -251,14 +338,20 @@ def train_bundle(base: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
     personas = {}
     if centers_orig is not None and len(centers_orig):
         personas = assign_personas_from_data(centers_orig, base["cleaned"])
-    return {
+    bundle = {
         "pre": pre,
         "scaled_centers": scaled_centers,
         "centers_orig": centers_orig,
         "personas": personas,
         "algorithm": cfg["algorithm"],
         "config": dict(cfg),
+        "model_version": MODEL_VERSION,
     }
+    logger.info(
+        "Trained prediction bundle: algorithm=%s, n_clusters=%d, personas=%d",
+        cfg["algorithm"], result.n_clusters, len(personas),
+    )
+    return bundle
 
 
 @st.cache_resource(show_spinner="Loading prediction model...")
@@ -269,12 +362,32 @@ def load_prediction_model() -> Optional[dict[str, Any]]:
         return None
     if MODEL_PATH.exists():
         try:
-            return joblib.load(MODEL_PATH)
-        except Exception:  # noqa: BLE001
-            pass
-    bundle = train_bundle(base, DEFAULT_CONFIG)
-    ensure_directory(MODELS_DIR)
-    joblib.dump(bundle, MODEL_PATH)
+            bundle = joblib.load(MODEL_PATH)
+            bundle_version = bundle.get("model_version") if isinstance(bundle, dict) else None
+            if bundle_version != MODEL_VERSION:
+                logger.warning(
+                    "Model version mismatch: artifact=%s, current=%s. Retraining.",
+                    bundle_version, MODEL_VERSION,
+                )
+                bundle = None
+            elif not isinstance(bundle, dict) or "pre" not in bundle:
+                logger.error("Model artifact has unexpected format; retraining.")
+                bundle = None
+            else:
+                logger.info("Loaded prediction model from %s (version %s)", MODEL_PATH.name, bundle_version)
+                return bundle
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Failed to load model artifact %s: %s", MODEL_PATH, exc)
+            bundle = None
+    else:
+        logger.info("No model artifact found at %s; training new bundle.", MODEL_PATH)
+        bundle = None
+
+    if bundle is None:
+        bundle = train_bundle(base, DEFAULT_CONFIG)
+        ensure_directory(MODELS_DIR)
+        joblib.dump(bundle, MODEL_PATH)
+        logger.info("Saved new prediction model to %s", MODEL_PATH.name)
     return bundle
 
 
@@ -283,6 +396,7 @@ def predict_new(
 ) -> Optional[dict[str, Any]]:
     """Map a new customer to a cluster + persona without retraining."""
     if not bundle or not bundle.get("personas"):
+        logger.warning("Prediction attempted with empty bundle or no personas.")
         return None
     row = pd.DataFrame(
         [
@@ -295,12 +409,18 @@ def predict_new(
             }
         ]
     )
-    Xs = bundle["pre"].transform(row)
+    try:
+        Xs = bundle["pre"].transform(row)
+    except Exception as exc:
+        logger.error("Prediction transform failed: %s", exc)
+        return None
     centers = bundle["scaled_centers"]
     if centers is None or len(centers) == 0:
+        logger.warning("Prediction attempted with no cluster centres.")
         return None
     valid = ~np.isnan(centers).any(axis=1)
     if not np.any(valid):
+        logger.warning("All cluster centres contain NaN; cannot predict.")
         return None
     c = centers[valid]
     dists = np.linalg.norm(c - Xs, axis=1)
@@ -317,19 +437,92 @@ def predict_new(
 # ===========================================================================
 # Presentation helpers
 # ===========================================================================
-def kpi_card(label: str, value: str, sub: str = "", color: str = "#2563eb") -> None:
+def cluster_colors(active: dict[str, Any]) -> dict[int, str]:
+    """Map each cluster id to its persona colour for visual consistency."""
+    personas = active.get("personas") or {}
+    return {
+        cid: PERSONA_COLORS.get(p.key, "#94a3b8") for cid, p in personas.items()
+    }
+
+
+def fmt_income(value: float) -> str:
+    """Format an income value in thousands of dollars."""
+    return f"${value:,.1f}k"
+
+
+def fmt_metric(value: Optional[float], digits: int = 3) -> str:
+    """Format a numeric metric, falling back to a dash for missing values."""
+    if value is None or (isinstance(value, float) and np.isnan(value)):
+        return "n/a"
+    return f"{value:,.{digits}f}"
+
+
+def kpi_card(
+    label: str,
+    value: str,
+    sub: str = "",
+    color: str = PRIMARY,
+) -> None:
     """Render a single KPI card via HTML for a polished, business look."""
     html = f"""
-    <div style="background:#ffffff;border:1px solid #e5e7eb;border-left:
-        4px solid {color};border-radius:8px;padding:16px 18px;height:100%;">
-      <div style="font-size:13px;color:#6b7280;font-weight:600;
-        text-transform:uppercase;letter-spacing:0.04em;">{label}</div>
-      <div style="font-size:26px;color:#111827;font-weight:700;
-        margin-top:6px;line-height:1.1;">{value}</div>
-      <div style="font-size:12px;color:#9ca3af;margin-top:4px;">{sub}</div>
+    <div style="background:#ffffff;border:1px solid {BORDER};
+        border-left:4px solid {color};border-radius:10px;padding:16px 18px;
+        height:100%;box-shadow:0 1px 2px rgba(15,23,42,0.04);">
+      <div style="font-size:12px;color:{MUTED};font-weight:600;
+        text-transform:uppercase;letter-spacing:0.05em;">{label}</div>
+      <div style="font-size:26px;color:{INK};font-weight:700;
+        margin-top:8px;line-height:1.1;">{value}</div>
+      <div style="font-size:12px;color:{MUTED};margin-top:6px;">{sub}</div>
     </div>
     """
     st.markdown(html, unsafe_allow_html=True)
+
+
+def section_header(title: str, caption: str = "") -> None:
+    """Render a consistent section title with optional supporting caption."""
+    st.markdown(f"<h2 style='color:{INK};margin-bottom:2px;'>{title}</h2>",
+                unsafe_allow_html=True)
+    if caption:
+        st.caption(caption)
+
+
+def style_chart(
+    fig: go.Figure,
+    title: Optional[str] = None,
+    height: int = 360,
+    xlabel: Optional[str] = None,
+    ylabel: Optional[str] = None,
+) -> go.Figure:
+    """Apply the shared, restrained analytics theme to a Plotly figure."""
+    if title is not None:
+        fig.update_layout(title=dict(text=title, x=0, xanchor="left"))
+    fig.update_layout(
+        template="plotly_white",
+        font=dict(family=CHART_FONT, size=13, color=INK),
+        height=height,
+        margin=dict(t=54, b=44, l=54, r=24),
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        colorway=PALETTE,
+        hoverlabel=dict(font_size=12, font_family=CHART_FONT),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+    )
+    base_axes = dict(
+        gridcolor="#eef2f7",
+        zerolinecolor="#e2e8f0",
+        linecolor="#cbd5e1",
+        title_font=dict(size=12, color=MUTED),
+        tickfont=dict(size=11, color=MUTED),
+    )
+    x_axes = {**base_axes}
+    y_axes = {**base_axes}
+    if xlabel is not None:
+        x_axes["title"] = xlabel
+    if ylabel is not None:
+        y_axes["title"] = ylabel
+    fig.update_xaxes(**x_axes)
+    fig.update_yaxes(**y_axes)
+    return fig
 
 
 def styled_metric_table(df: pd.DataFrame) -> None:
@@ -346,11 +539,70 @@ def show_error(msg: str, hint: str = "") -> None:
 # ===========================================================================
 # Section 1 - Executive Overview
 # ===========================================================================
+def derive_headline(active: dict[str, Any]) -> tuple[str, str]:
+    """Return (headline, plain-language interpretation) for the active result.
+
+    The headline is derived from the segments actually present so it stays
+    correct when the configuration changes.
+    """
+    personas = active.get("personas") or {}
+    profiles = active.get("profiles") or []
+    centers = active.get("centers_orig")
+
+    if not personas or not profiles:
+        return (
+            "No segments are available for the current configuration.",
+            "Adjust the algorithm and parameters in the Clustering Lab, then "
+            "apply a configuration that produces at least two valid clusters.",
+        )
+
+    by_count = sorted(profiles, key=lambda p: p.customer_count, reverse=True)
+    largest = by_count[0]
+    largest_persona = personas.get(largest.cluster_id)
+
+    # Highest-value opportunity: a High-Value (vip) segment if present,
+    # otherwise the segment with the greatest combined income + spending.
+    vip = next((p for p in profiles if personas.get(p.cluster_id, None)
+                and personas[p.cluster_id].key == "vip"), None)
+    if vip is not None:
+        value_seg = vip
+    else:
+        def _score(p: Any) -> float:
+            if centers is None or p.cluster_id not in centers.index:
+                return 0.0
+            row = centers.loc[p.cluster_id]
+            return float(row.get(ANNUAL_INCOME, 0)) + float(row.get(SPENDING_SCORE, 0))
+        value_seg = max(profiles, key=_score)
+
+    value_persona = personas.get(value_seg.cluster_id)
+    inc = float(centers.loc[value_seg.cluster_id, ANNUAL_INCOME]) if centers is not None else float("nan")
+    spd = float(centers.loc[value_seg.cluster_id, SPENDING_SCORE]) if centers is not None else float("nan")
+
+    headline = (
+        f"The largest group is **{largest_persona.name if largest_persona else 'Segment ' + str(largest.cluster_id)}** "
+        f"at {largest.percentage}% of the base "
+        f"({largest.customer_count:,} customers). "
+        f"**{value_persona.name if value_persona else 'Segment ' + str(value_seg.cluster_id)}** "
+        f"is the highest-value opportunity, averaging {fmt_income(inc)} income "
+        f"and a spending score of {spd:.0f}."
+    )
+
+    total = len(active.get("labels", [])) if active.get("labels") is not None else 0
+    interpretation = (
+        f"Customer bases are rarely uniform. The segmentation splits the "
+        f"{total:,} customers into distinct groups so each "
+        f"team can act on the right audience. The largest segment tells you where "
+        f"most of your volume sits; the highest-value segment tells you where a "
+        f"small, well-targeted premium offer can return the most revenue. "
+        f"Use the Segment Explorer to read each group's profile and the recommended action."
+    )
+    return headline, interpretation
+
+
 def section_overview(base: dict[str, Any], active: dict[str, Any]) -> None:
-    st.header("Executive Overview")
-    st.caption(
-        "High-level segmentation metrics for the currently selected "
-        "clustering configuration."
+    section_header(
+        "Executive Overview",
+        "A snapshot of the customer base and the active segmentation configuration.",
     )
 
     raw = base["raw"]
@@ -358,141 +610,249 @@ def section_overview(base: dict[str, Any], active: dict[str, Any]) -> None:
 
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        kpi_card("Total Customers", f"{len(raw):,}", "After deduplication")
+        kpi_card("Total Customers", f"{len(raw):,}", "After deduplication", PRIMARY)
     with col2:
         n_clusters = active.get("n_clusters", 0) if not active.get("error") else 0
         kpi_card(
-            "Clusters",
+            "Segments",
             str(n_clusters),
-            f"{active.get('noise', 0)} noise points" if cfg["algorithm"] == "dbscan" else "Segments found",
-            color="#16a34a",
+            f"{active.get('noise', 0)} noise points" if cfg["algorithm"] == "dbscan" else "Distinct groups found",
+            "#16a34a",
         )
     with col3:
         avg_income = raw[ANNUAL_INCOME].mean()
-        kpi_card("Avg Income", f"${avg_income:,.1f}k", "Across all customers", color="#ea580c")
+        kpi_card("Average Income", fmt_income(avg_income), "Across all customers", "#ea580c")
     with col4:
         avg_spend = raw[SPENDING_SCORE].mean()
-        kpi_card("Avg Spending", f"{avg_spend:,.1f}", "Spending score (1-100)", color="#9333ea")
+        kpi_card("Average Spending", f"{avg_spend:,.1f}", "Score (1-100)", "#7c3aed")
 
     st.divider()
     c1, c2 = st.columns(2)
     with c1:
         kpi_card(
-            "Selected Algorithm",
+            "Selected Model",
             ALGORITHMS.get(cfg["algorithm"], cfg["algorithm"]),
             "Configurable in the Clustering Lab",
-            color="#0891b2",
+            "#0891b2",
         )
     with c2:
+        sil = active.get("silhouette")
         kpi_card(
             "Clustering Configuration",
             cfg_label(cfg),
-            f"Silhouette: {active.get('silhouette'):.3f}"
-            if active.get("silhouette") is not None
+            f"Silhouette: {fmt_metric(sil, 3)}"
+            if not active.get("error")
             else "Silhouette: n/a",
-            color="#ca8a04",
+            "#ca8a04",
         )
+
+    st.divider()
+    headline, interpretation = derive_headline(active)
+    st.markdown(
+        f"""
+        <div style="background:{SURFACE};border:1px solid {BORDER};
+            border-left:4px solid {PRIMARY};border-radius:10px;
+            padding:18px 20px;">
+          <div style="font-size:12px;font-weight:700;color:{MUTED};
+            text-transform:uppercase;letter-spacing:0.05em;">
+            Most important business insight</div>
+          <div style="font-size:15px;color:{INK};margin-top:8px;line-height:1.5;">
+            {headline}
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    with st.expander("What does this mean?"):
+        st.markdown(interpretation)
+        st.markdown(
+            "- **Segments** are groups of customers with similar income and "
+            "spending behaviour, so campaigns can be tailored instead of "
+            "one-size-fits-all.\n"
+            "- **Silhouette** (0 to 1) measures how clearly separated the "
+            "segments are — higher means tighter, more distinct groups.\n"
+            "- **Average income / spending** set the financial scale of each "
+            "group and guide how premium an offer should be."
+        )
+
+    st.divider()
+    st.markdown("##### Key Analytical Insights")
+    st.caption("Data-driven observations derived from the active segmentation.")
+    insights_data = active.get("analytical_insights")
+    if insights_data:
+        for insight in insights_data:
+            st.markdown(
+                f"**{insight.title}:** {insight.detail}"
+            )
+    else:
+        st.info("Analytical insights are not available for this configuration.")
 
     if active.get("error"):
         st.divider()
-        show_error(
-            "The selected configuration failed.",
-            active["error"],
-        )
+        show_error("The selected configuration failed.", active["error"])
 
 
 # ===========================================================================
 # Section 2 - Customer Analytics
 # ===========================================================================
 def section_analytics(base: dict[str, Any]) -> None:
-    st.header("Customer Analytics")
-    st.caption("Exploratory, interactive views of the underlying customer base.")
+    section_header(
+        "Customer Analytics",
+        "Interactive, exploratory views of the underlying customer base.",
+    )
 
     raw = base["raw"]
 
-    st.subheader("Distributions")
+    st.markdown("##### Distributions")
     d1, d2, d3 = st.columns(3)
     with d1:
         fig = px.histogram(
             raw, x=AGE, nbins=20, color_discrete_sequence=["#2563eb"],
             title="Age Distribution",
         )
-        fig.update_layout(template="plotly_white", margin=dict(t=40, b=30))
+        fig.update_traces(hovertemplate="Age: %{x}<br>Customers: %{y}<extra></extra>")
+        fig = style_chart(fig, xlabel="Age (years)", ylabel="Customers")
         st.plotly_chart(fig, use_container_width=True)
     with d2:
         fig = px.histogram(
             raw, x=ANNUAL_INCOME, nbins=20, color_discrete_sequence=["#ea580c"],
             title="Annual Income Distribution",
         )
-        fig.update_layout(template="plotly_white", margin=dict(t=40, b=30))
+        fig.update_traces(hovertemplate="Income: %{x} k$<br>Customers: %{y}<extra></extra>")
+        fig = style_chart(fig, xlabel="Annual Income (k$)", ylabel="Customers")
         st.plotly_chart(fig, use_container_width=True)
     with d3:
         fig = px.histogram(
-            raw, x=SPENDING_SCORE, nbins=20, color_discrete_sequence=["#9333ea"],
+            raw, x=SPENDING_SCORE, nbins=20, color_discrete_sequence=["#7c3aed"],
             title="Spending Score Distribution",
         )
-        fig.update_layout(template="plotly_white", margin=dict(t=40, b=30))
+        fig.update_traces(hovertemplate="Score: %{x}<br>Customers: %{y}<extra></extra>")
+        fig = style_chart(fig, xlabel="Spending Score (1-100)", ylabel="Customers")
         st.plotly_chart(fig, use_container_width=True)
 
-    st.subheader("Composition & Relationships")
+    st.markdown("##### Composition & Relationships")
     r1, r2 = st.columns(2)
     with r1:
         counts = raw[GENRE].value_counts().reset_index()
         counts.columns = [GENRE, "Count"]
         fig = px.pie(
-            counts, names=GENRE, values="Count", title="Gender Distribution",
-            color_discrete_sequence=PALETTE,
+            counts, names=GENRE, values="Count", title="Customer Composition by Gender",
+            color_discrete_sequence=PALETTE, hole=0.45,
         )
-        fig.update_layout(template="plotly_white", margin=dict(t=40, b=30))
+        fig.update_traces(
+            textinfo="percent+label",
+            hovertemplate="%{label}<br>Customers: %{value}<br>Share: %{percent}<extra></extra>",
+        )
+        fig = style_chart(fig, height=380)
+        fig.update_layout(showlegend=True, legend=dict(orientation="h",
+                              yanchor="bottom", y=-0.1, xanchor="center", x=0.5))
         st.plotly_chart(fig, use_container_width=True)
     with r2:
         corr = raw[[AGE, ANNUAL_INCOME, SPENDING_SCORE]].corr().round(2)
+        corr.columns = ["Age", "Income", "Spending"]
+        corr.index = ["Age", "Income", "Spending"]
         fig = px.imshow(
-            corr, text_auto=True, color_continuous_scale="RdBu_r",
-            title="Feature Correlations",
+            corr, text_auto=".2f", color_continuous_scale="RdBu_r",
+            title="Feature Correlation",
         )
-        fig.update_layout(template="plotly_white", margin=dict(t=40, b=30))
+        fig.update_traces(hovertemplate="%{y} vs %{x}<br>Correlation: %{z}<extra></extra>")
+        fig.update_coloraxes(colorbar_title="Correlation")
+        fig = style_chart(fig, height=380)
         st.plotly_chart(fig, use_container_width=True)
 
-    st.subheader("Feature Relationships")
+    st.markdown("##### Feature Relationships")
     rel_mode = st.radio(
         "Colour points by",
-        ["Spending vs Income (by Gender)", "Spending vs Income (by Cluster)"],
+        ["Income vs Spending by Gender", "Income vs Spending by Segment"],
         horizontal=True,
+        label_visibility="collapsed",
     )
-    if rel_mode.startswith("Spending vs Income (by Gender)"):
+    if rel_mode.startswith("Income vs Spending by Gender"):
         fig = px.scatter(
             raw, x=ANNUAL_INCOME, y=SPENDING_SCORE, color=GENRE,
-            hover_data=[AGE, GENRE], title="Income vs Spending Score",
+            hover_data=[AGE, GENRE], title="Annual Income vs Spending Score",
             color_discrete_sequence=PALETTE,
         )
     else:
         active = st.session_state.active
         cleaned = base["cleaned"].copy()
         if active.get("labels") is not None:
-            cleaned["Cluster"] = active["labels"]
+            cleaned["Segment"] = active["labels"]
             fig = px.scatter(
-                cleaned, x=ANNUAL_INCOME, y=SPENDING_SCORE, color="Cluster",
-                hover_data=[AGE, GENRE], title="Income vs Spending (coloured by cluster)",
-                color_continuous_scale="Turbo",
+                cleaned, x=ANNUAL_INCOME, y=SPENDING_SCORE, color="Segment",
+                hover_data=[AGE, GENRE], title="Income vs Spending by Segment",
+                color_discrete_map=cluster_colors(active),
             )
         else:
             fig = px.scatter(
                 raw, x=ANNUAL_INCOME, y=SPENDING_SCORE, hover_data=[AGE, GENRE],
-                title="Income vs Spending Score",
+                title="Annual Income vs Spending Score",
             )
-    fig.update_layout(template="plotly_white", margin=dict(t=40, b=30))
+    fig.update_traces(
+        marker=dict(size=9, opacity=0.8, line=dict(width=0.5, color="white")),
+        hovertemplate=(
+            "Income: %{x} k$<br>Spending: %{y}<br>Age: %{customdata[0]}<br>"
+            "Gender: %{customdata[1]}<extra></extra>"
+        ),
+    )
+    fig = style_chart(fig, xlabel="Annual Income (k$)", ylabel="Spending Score (1-100)")
     st.plotly_chart(fig, use_container_width=True)
+
+    # 3D scatter (Age, Income, Spending) coloured by segment when available.
+    st.markdown("##### 3D Cluster View")
+    st.caption(
+        "Three-dimensional view of all numeric features. "
+        "Rotate by dragging the plot."
+    )
+    active = st.session_state.active
+    raw_3d = base["raw"][[AGE, ANNUAL_INCOME, SPENDING_SCORE]].copy()
+    raw_3d["Segment"] = active["labels"] if active.get("labels") is not None else -1
+    raw_3d["SegmentLabel"] = raw_3d["Segment"].apply(
+        lambda s: "No segment" if s == -1 else f"Segment {s}"
+    )
+    fig3d = px.scatter_3d(
+        raw_3d,
+        x=AGE,
+        y=ANNUAL_INCOME,
+        z=SPENDING_SCORE,
+        color="SegmentLabel",
+        title="Customer Segments in 3D (Age, Income, Spending)",
+        color_discrete_sequence=PALETTE,
+        opacity=0.85,
+    )
+    fig3d.update_traces(
+        marker=dict(size=5, line=dict(width=0.3, color="white")),
+    )
+    fig3d = style_chart(fig3d, height=500)
+    fig3d.update_layout(
+        scene=dict(
+            xaxis_title="Age",
+            yaxis_title="Annual Income (k$)",
+            zaxis_title="Spending Score (1-100)",
+        ),
+    )
+    st.plotly_chart(fig3d, use_container_width=True)
 
 
 # ===========================================================================
 # Section 3 - Clustering Lab
 # ===========================================================================
 def section_lab(base: dict[str, Any]) -> None:
-    st.header("Clustering Lab")
-    st.caption("Experiment with algorithms and parameters, then apply the result.")
+    section_header(
+        "Clustering Lab",
+        "Configure an algorithm, review the resulting segments, then interpret "
+        "what the configuration means for the business.",
+    )
 
     cfg = st.session_state.cfg
+
+    # ------------------------------------------------------------------ #
+    # Configuration
+    # ------------------------------------------------------------------ #
+    st.markdown("##### Configuration")
+    st.caption("Choose an algorithm and its parameters, then apply the configuration.")
+
     algorithm = st.selectbox(
         "Algorithm",
         options=list(ALGORITHMS.keys()),
@@ -503,25 +863,28 @@ def section_lab(base: dict[str, Any]) -> None:
     params: dict[str, Any] = {"algorithm": algorithm}
     if algorithm in ("kmeans", "agglomerative", "gmm"):
         params["n_clusters"] = st.slider(
-            "Number of clusters (k)",
+            "Number of segments (k)",
             min_value=MIN_K, max_value=MAX_K, value=cfg["n_clusters"],
         )
     if algorithm == "agglomerative":
         params["linkage"] = st.selectbox(
-            "Linkage", ["ward", "complete", "average", "single"],
+            "Linkage method", ["ward", "complete", "average", "single"],
             index=["ward", "complete", "average", "single"].index(cfg["linkage"]),
+            help="How distance between clusters is measured when merging them.",
         )
     if algorithm == "dbscan":
         c1, c2 = st.columns(2)
         with c1:
             params["eps"] = st.number_input(
-                "eps (neighbourhood radius)", min_value=0.05, max_value=5.0,
+                "Neighbourhood radius (eps)", min_value=0.05, max_value=5.0,
                 value=float(cfg["eps"]), step=0.05,
+                help="Maximum distance between points in the same dense region.",
             )
         with c2:
             params["min_samples"] = st.number_input(
-                "min_samples", min_value=1, max_value=50,
+                "Minimum samples", min_value=1, max_value=50,
                 value=int(cfg["min_samples"]), step=1,
+                help="Fewest points needed to form a dense region (a cluster).",
             )
 
     # Carry over unchanged fields.
@@ -530,7 +893,8 @@ def section_lab(base: dict[str, Any]) -> None:
     params.setdefault("eps", cfg["eps"])
     params.setdefault("min_samples", cfg["min_samples"])
 
-    applied = st.button("Apply Configuration", type="primary")
+    applied = st.button("Apply Configuration", type="primary",
+                        help="Recompute segments for this configuration.")
     if applied:
         st.session_state.cfg = params
         st.session_state.active = None
@@ -538,14 +902,14 @@ def section_lab(base: dict[str, Any]) -> None:
         st.rerun()
 
     active = st.session_state.active
+
+    # ------------------------------------------------------------------ #
+    # Results
+    # ------------------------------------------------------------------ #
     if active.get("error"):
         st.divider()
         show_error("Clustering failed for this configuration.", active["error"])
         return
-
-    labels = active["labels"]
-    n_clusters = active["n_clusters"]
-    centers_orig = active["centers_orig"]
 
     if not active["valid"]:
         st.divider()
@@ -560,14 +924,25 @@ def section_lab(base: dict[str, Any]) -> None:
         return
 
     st.divider()
-    st.subheader("Cluster Visualization")
+    st.markdown("##### Results")
+    labels = active["labels"]
+    n_clusters = active["n_clusters"]
+    centers_orig = active["centers_orig"]
+
     cleaned = base["cleaned"].copy()
-    cleaned["Cluster"] = labels
+    cleaned["Segment"] = labels
 
     fig = px.scatter(
-        cleaned, x=ANNUAL_INCOME, y=SPENDING_SCORE, color="Cluster",
-        hover_data=[AGE, GENRE], title=f"Customer Clusters ({cfg_label(cfg)})",
-        color_continuous_scale="Turbo",
+        cleaned, x=ANNUAL_INCOME, y=SPENDING_SCORE, color="Segment",
+        hover_data=[AGE, GENRE], title=f"Customer Segments ({cfg_label(cfg)})",
+        color_discrete_map=cluster_colors(active),
+    )
+    fig.update_traces(
+        marker=dict(size=9, opacity=0.8, line=dict(width=0.5, color="white")),
+        hovertemplate=(
+            "Income: %{x} k$<br>Spending: %{y}<br>Age: %{customdata[0]}<br>"
+            "Gender: %{customdata[1]}<extra></extra>"
+        ),
     )
     if centers_orig is not None and len(centers_orig):
         fig.add_trace(
@@ -575,53 +950,56 @@ def section_lab(base: dict[str, Any]) -> None:
                 x=centers_orig[ANNUAL_INCOME],
                 y=centers_orig[SPENDING_SCORE],
                 mode="markers",
-                marker=dict(symbol="diamond", size=16, color="black",
+                marker=dict(symbol="diamond", size=16, color="#0f172a",
                             line=dict(width=2, color="white")),
-                name="Centroids",
+                name="Segment centre",
+                hovertemplate="Centre<br>Income: %{x} k$<br>Spending: %{y}<extra></extra>",
             )
         )
-    fig.update_layout(template="plotly_white", margin=dict(t=40, b=30))
+    fig = style_chart(fig, xlabel="Annual Income (k$)", ylabel="Spending Score (1-100)")
     st.plotly_chart(fig, use_container_width=True)
 
     c1, c2 = st.columns(2)
     with c1:
-        st.subheader("Cluster Sizes")
+        st.markdown("###### Customers per Segment")
         counts = pd.Series(labels).value_counts().sort_index()
-        size_df = pd.DataFrame(
-            {"Cluster": counts.index, "Customers": counts.values}
-        )
+        size_df = pd.DataFrame({"Segment": counts.index, "Customers": counts.values})
         fig = px.bar(
-            size_df, x="Cluster", y="Customers",
-            color="Cluster", color_continuous_scale="Turbo",
-            title="Customers per Cluster",
+            size_df, x="Segment", y="Customers", title="",
+            color="Segment", color_discrete_map=cluster_colors(active),
         )
-        fig.update_layout(template="plotly_white", showlegend=False,
-                          margin=dict(t=40, b=30))
+        fig.update_traces(
+            hovertemplate="Segment %{x}<br>Customers: %{y}<extra></extra>",
+            marker_line_color="white", marker_line_width=1,
+        )
+        fig = style_chart(fig, height=320, xlabel="Segment", ylabel="Customers")
+        fig.update_layout(showlegend=False)
         st.plotly_chart(fig, use_container_width=True)
     with c2:
-        st.subheader("Model Metrics")
+        st.markdown("###### Model Metrics")
         metrics: dict[str, Any] = {}
         if active.get("silhouette") is not None:
-            metrics["Silhouette Score"] = round(active["silhouette"], 4)
+            metrics["Silhouette Score"] = fmt_metric(active["silhouette"], 4)
         if active.get("inertia") is not None:
-            metrics["Inertia (WCSS)"] = round(active["inertia"], 2)
-        metrics["Clusters (excl. noise)"] = int(n_clusters)
+            metrics["Inertia (WCSS)"] = fmt_metric(active["inertia"], 2)
+        metrics["Segments (excl. noise)"] = str(int(n_clusters))
         if st.session_state.cfg["algorithm"] == "dbscan":
-            metrics["Noise points"] = int(active.get("noise", 0))
+            metrics["Noise points"] = str(int(active.get("noise", 0)))
         mdf = pd.DataFrame(
-            {"Metric": list(metrics.keys()), "Value": list(metrics.values())}
+            {"Metric": list(metrics.keys()),
+             "Value": [str(v) for v in metrics.values()]}
         )
         styled_metric_table(mdf)
 
     if centers_orig is not None and len(centers_orig):
-        st.subheader("Cluster Centers (original scale)")
+        st.markdown("###### Segment Centres (original scale)")
         center_df = centers_orig.copy()
-        center_df.index = [f"Cluster {i}" for i in center_df.index]
+        center_df.index = [f"Segment {i}" for i in center_df.index]
         center_df = center_df.round(1)
-        styled_metric_table(center_df.reset_index().rename(columns={"index": "Cluster"}))
+        styled_metric_table(center_df.reset_index().rename(columns={"index": "Segment"}))
 
     st.divider()
-    st.subheader("Deploy this configuration")
+    st.markdown("###### Deploy this configuration")
     st.caption(
         "Save the active configuration as the deployed prediction model. "
         "The prediction form then reuses it without retraining."
@@ -631,38 +1009,188 @@ def section_lab(base: dict[str, Any]) -> None:
         ensure_directory(MODELS_DIR)
         joblib.dump(bundle, MODEL_PATH)
         st.cache_resource.clear()
+        logger.info("Prediction model manually retrained and saved by user.")
         st.success(f"Prediction model saved to {MODEL_PATH.name}.")
+
+    # ------------------------------------------------------------------ #
+    # Interpretation
+    # ------------------------------------------------------------------ #
+    st.divider()
+    st.markdown("##### Interpretation")
+    st.caption("What the selected configuration means in business terms.")
+
+    algo = ALGORITHMS.get(cfg["algorithm"], cfg["algorithm"])
+    algo_blurb = {
+        "kmeans": (
+            "K-Means partitions customers into a fixed number of groups by "
+            "placing each customer in the nearest centre, then moving the "
+            "centres to best fit their group. It is fast and easy to explain, "
+            "but assumes roughly round, similarly sized groups."
+        ),
+        "agglomerative": (
+            "Agglomerative clustering starts with every customer as its own "
+            "group and repeatedly merges the closest pairs. The linkage method "
+            "controls how 'closeness' is measured, which shapes the final shape "
+            "of the segments."
+        ),
+        "dbscan": (
+            "DBSCAN finds dense regions of customers and leaves sparse areas as "
+            "noise instead of forcing every customer into a segment. It does not "
+            "need a fixed number of segments, but is sensitive to eps and "
+            "min_samples on this two-feature data."
+        ),
+        "gmm": (
+            "Gaussian Mixture Modelling fits overlapping bell-shaped distributions "
+            "to the customers and assigns each a probability of belonging to each "
+            "group. It captures softer, overlapping segments better than K-Means."
+        ),
+    }.get(cfg["algorithm"], "")
+
+    param_lines = []
+    if cfg["algorithm"] in ("kmeans", "agglomerative", "gmm"):
+        param_lines.append(f"**Segments (k):** {cfg['n_clusters']} — the number "
+                           f"of distinct groups the model will create.")
+    if cfg["algorithm"] == "agglomerative":
+        param_lines.append(f"**Linkage:** {cfg['linkage']} — the rule used to "
+                           f"decide which groups merge first.")
+    if cfg["algorithm"] == "dbscan":
+        param_lines.append(f"**eps:** {cfg['eps']} — how close points must be to "
+                           f"belong to the same dense region.")
+        param_lines.append(f"**min_samples:** {cfg['min_samples']} — the smallest "
+                           f"a dense region can be to count as a segment.")
+
+    sil = active.get("silhouette")
+    if sil is not None:
+        if sil >= 0.7:
+            sil_text = "strong, well-separated segments"
+        elif sil >= 0.5:
+            sil_text = "reasonably separated segments"
+        elif sil >= 0.25:
+            sil_text = "weakly separated segments — groups overlap somewhat"
+        else:
+            sil_text = "poorly separated segments — groups overlap heavily"
+        sil_read = (f"A silhouette of **{sil:.3f}** indicates {sil_text}. "
+                    f"Values range from -1 (overlapping) to 1 (perfectly distinct).")
+    else:
+        sil_read = "Silhouette is not available for this configuration."
+
+    st.markdown(algo_blurb)
+    if param_lines:
+        st.markdown("\n".join(f"- {line}" for line in param_lines))
+    st.info(sil_read)
 
 
 # ===========================================================================
 # Section 4 - Model Comparison
 # ===========================================================================
+METRIC_GLOSSARY = [
+    (
+        "Silhouette Score",
+        "Higher is better",
+        "Measures how tightly grouped and how far apart the segments are. It "
+        "compares each customer's distance to its own segment centre with its "
+        "distance to the next nearest centre. Ranges from -1 (overlapping) to "
+        "1 (perfectly distinct); values above ~0.5 are good. Needs at least two "
+        "segments.",
+    ),
+    (
+        "Davies-Bouldin Index",
+        "Lower is better",
+        "The average 'similarity' of each segment to its most similar neighbouring "
+        "segment, where similarity combines spread and separation. A lower value "
+        "means segments are compact and well separated; 0 would be ideal.",
+    ),
+    (
+        "Calinski-Harabasz Index",
+        "Higher is better",
+        "The ratio of separation between segments to spread within segments. A "
+        "higher value indicates denser, better-separated segments. There is no "
+        "fixed upper bound, so it is interpreted relative to other configurations.",
+    ),
+    (
+        "Inertia (WCSS)",
+        "Lower is better (K-Means only)",
+        "The sum of squared distances from each customer to its segment centre. "
+        "Lower means customers sit closer to their centre. It always falls as k "
+        "increases, so it is used for the 'elbow' shape rather than comparing "
+        "different values of k directly.",
+    ),
+]
+
+
 def section_comparison(base: dict[str, Any]) -> None:
-    st.header("Model Comparison")
-    st.caption("Compare candidate algorithms and select an optimal k.")
+    section_header(
+        "Model Comparison",
+        "Compare candidate algorithms and choose an appropriate number of segments.",
+    )
 
     X = base["X"]
     with st.spinner("Evaluating candidate algorithms..."):
-        with warnings.catch_warnings():
+        with _suppress_warnings():
             warnings.simplefilter("ignore")
             table = run_full_evaluation(X)
 
-    st.subheader("Algorithm Comparison")
+    st.markdown("##### Algorithm Comparison")
     comp_df = pd.DataFrame(table.rows)
+    if "Algorithm" in comp_df.columns:
+        comp_df["Algorithm"] = comp_df["Algorithm"].map(
+            lambda a: ALGORITHMS.get(a, str(a))
+        )
+    for col in comp_df.columns:
+        if col != "Algorithm":
+            comp_df[col] = comp_df[col].apply(
+                lambda v: fmt_metric(v, 3) if isinstance(v, (int, float, float)) and not isinstance(v, bool) else v
+            )
     styled_metric_table(comp_df)
 
     recommendation = table.recommendation
     st.success(
-        f"Recommended configuration: **{recommendation}** "
-        f"(highest composite score across available metrics)."
+        f"Recommended configuration: **{ALGORITHMS.get(recommendation, recommendation)}** "
+        f"(highest composite score across the available metrics)."
         if recommendation
         else "No candidate produced valid metrics."
     )
 
+    with st.expander("How to read these metrics"):
+        st.caption(
+            "Each metric summarises a different aspect of segment quality. "
+            "Higher-is-better and lower-is-better are noted for every metric so "
+            "the table can be interpreted without statistical background."
+        )
+        for name, direction, explanation in METRIC_GLOSSARY:
+            st.markdown(f"**{name}** — *{direction}*")
+            st.markdown(explanation)
+
     st.divider()
-    st.subheader("K-Means Elbow & Silhouette Analysis")
+    st.markdown("##### Cluster Stability (K-Means)")
+    st.caption(
+        "K-Means is run 10 times with different random seeds. "
+        "Pairwise Adjusted Rand Index (ARI) measures label agreement. "
+        "1.0 = perfect agreement, 0.0 = random."
+    )
+    with st.spinner("Evaluating cluster stability..."):
+        with _suppress_warnings():
+            warnings.simplefilter("ignore")
+            from src.analytics import compute_cluster_stability
+            try:
+                stab = compute_cluster_stability(X, n_clusters=5, n_runs=10)
+                stab_cols = st.columns(4)
+                with stab_cols[0]:
+                    kpi_card("Mean ARI", f"{stab.mean_ari:.3f}", "Across 10 runs", "#16a34a")
+                with stab_cols[1]:
+                    kpi_card("Min ARI", f"{stab.min_ari:.3f}", "Worst agreement", "#dc2626")
+                with stab_cols[2]:
+                    kpi_card("Max ARI", f"{stab.max_ari:.3f}", "Best agreement", "#2563eb")
+                with stab_cols[3]:
+                    kpi_card("Std ARI", f"{stab.std_ari:.3f}", "Variability", "#7c3aed")
+                st.info(stab.interpretation)
+            except Exception as exc:
+                st.warning(f"Stability analysis failed: {exc}")
+
+    st.divider()
+    st.markdown("##### K-Means Elbow & Silhouette Analysis")
     with st.spinner("Computing k-range diagnostics..."):
-        with warnings.catch_warnings():
+        with _suppress_warnings():
             warnings.simplefilter("ignore")
             kopt = evaluate_k_range(X)
 
@@ -679,22 +1207,27 @@ def section_comparison(base: dict[str, Any]) -> None:
     fig.add_trace(go.Scatter(x=kdf["k"], y=kdf["Silhouette"], mode="lines+markers",
                              name="Silhouette Score", yaxis="y2",
                              line=dict(color="#16a34a")))
+    fig.add_vline(x=kopt.optimal_k, line_dash="dot",
+                  line_color="#94a3b8",
+                  annotation_text=f"optimal k = {kopt.optimal_k}",
+                  annotation_position="top")
+    fig = style_chart(fig, title="Elbow (inertia) and Silhouette vs k",
+                      height=420)
     fig.update_layout(
-        template="plotly_white",
-        title="Elbow (inertia) and Silhouette vs k",
-        xaxis=dict(title="Number of clusters (k)"),
+        xaxis=dict(title="Number of segments (k)",
+                   tickmode="array", tickvals=kdf["k"]),
         yaxis=dict(title="Inertia"),
-        yaxis2=dict(title="Silhouette", overlaying="y", side="right"),
-        margin=dict(t=40, b=30),
+        yaxis2=dict(title="Silhouette", overlaying="y", side="right",
+                    showgrid=False),
     )
     st.plotly_chart(fig, use_container_width=True)
 
     st.info(
-        f"Based on the silhouette analysis, the optimal number of clusters is "
+        f"Based on the silhouette analysis, the optimal number of segments is "
         f"**k = {kopt.optimal_k}** (peak silhouette score "
         f"{max(kopt.silhouette_scores):.3f}). Combine this with the elbow point "
         f"and the business-readable personas to choose a final configuration. "
-        f"The recommended algorithm above ({recommendation or 'n/a'}) optimises "
+        f"The recommended algorithm above ({ALGORITHMS.get(recommendation, 'n/a')}) optimises "
         f"the composite of Silhouette, Calinski-Harabasz, Davies-Bouldin and "
         f"Inertia for this dataset."
     )
@@ -703,9 +1236,27 @@ def section_comparison(base: dict[str, Any]) -> None:
 # ===========================================================================
 # Section 5 - Segment Explorer
 # ===========================================================================
+def _segment_stats(base: dict[str, Any], labels: np.ndarray) -> pd.DataFrame:
+    """Return per-cluster aggregates (income, spending, age, top genre)."""
+    enriched = base["cleaned"].copy()
+    enriched["Cluster"] = labels
+    grp = enriched.groupby("Cluster", observed=True)
+    stats = pd.DataFrame({
+        "avg_income": grp[ANNUAL_INCOME].mean(),
+        "avg_spending": grp[SPENDING_SCORE].mean(),
+        "avg_age": grp[AGE].mean(),
+        "top_genre": grp[GENRE].agg(
+            lambda s: s.mode().iloc[0] if not s.mode().empty else "Unknown"
+        ),
+    })
+    return stats
+
+
 def section_explorer(base: dict[str, Any], active: dict[str, Any]) -> None:
-    st.header("Segment Explorer")
-    st.caption("Drill into a single persona / cluster for detailed interpretation.")
+    section_header(
+        "Segment Explorer",
+        "Meet each customer persona and read its profile and recommended action.",
+    )
 
     if active.get("error") or not active.get("valid"):
         show_error("No valid segments available for the current configuration.")
@@ -714,46 +1265,107 @@ def section_explorer(base: dict[str, Any], active: dict[str, Any]) -> None:
     personas = active["personas"]
     profiles_by_id = {p.cluster_id: p for p in active["profiles"]}
     cluster_ids = sorted(personas.keys())
+    stats = _segment_stats(base, active["labels"])
 
+    # ------------------------------------------------------------------ #
+    # Persona overview cards (strongest visual hierarchy)
+    # ------------------------------------------------------------------ #
+    st.markdown("##### Customer Personas")
+    st.caption("At a glance: who each segment is and how many customers it holds.")
+
+    cards = sorted(cluster_ids, key=lambda c: profiles_by_id.get(c).customer_count,
+                   reverse=True)
+    cols = st.columns(3)
+    for idx, cid in enumerate(cards):
+        persona = personas[cid]
+        prof = profiles_by_id.get(cid)
+        color = PERSONA_COLORS.get(persona.key, "#94a3b8")
+        count = prof.customer_count if prof else 0
+        pct = prof.percentage if prof else 0.0
+        with cols[idx % 3]:
+            st.markdown(
+                f"""
+                <div style="background:#ffffff;border:1px solid {BORDER};
+                    border-top:4px solid {color};border-radius:10px;
+                    padding:14px 16px;height:100%;margin-bottom:14px;
+                    box-shadow:0 1px 2px rgba(15,23,42,0.04);">
+                  <div style="font-size:11px;font-weight:700;color:{MUTED};
+                    text-transform:uppercase;letter-spacing:0.05em;">
+                    Segment {cid}</div>
+                  <div style="font-size:16px;font-weight:700;color:{INK};
+                    margin:4px 0 8px;">{persona.name}</div>
+                  <div style="display:flex;gap:14px;">
+                    <div>
+                      <div style="font-size:20px;font-weight:700;color:{color};">
+                        {count:,}</div>
+                      <div style="font-size:11px;color:{MUTED};">customers</div>
+                    </div>
+                    <div>
+                      <div style="font-size:20px;font-weight:700;color:{INK};">
+                        {pct}%</div>
+                      <div style="font-size:11px;color:{MUTED};">of base</div>
+                    </div>
+                  </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+    # ------------------------------------------------------------------ #
+    # Detailed drill-down for one segment
+    # ------------------------------------------------------------------ #
+    st.divider()
+    st.markdown("##### Segment Detail")
     selection = st.selectbox(
-        "Select a cluster / persona",
+        "Select a segment / persona",
         options=cluster_ids,
-        format_func=lambda cid: f"Cluster {cid} - {personas[cid].name}",
+        format_func=lambda cid: f"Segment {cid} - {personas[cid].name}",
     )
 
     persona = personas[selection]
     prof = profiles_by_id.get(selection)
     insight = _PERSONA_INSIGHTS.get(persona.key)
+    color = PERSONA_COLORS.get(persona.key, "#94a3b8")
 
-    # Per-cluster aggregates from the cleaned data (row-aligned with labels).
-    labels = active["labels"]
-    enriched = base["cleaned"].copy()
-    enriched["Cluster"] = labels
-    grp = enriched.groupby("Cluster")
-    avg_income = float(grp[ANNUAL_INCOME].mean().get(selection, float("nan")))
-    avg_spending = float(grp[SPENDING_SCORE].mean().get(selection, float("nan")))
-
-    st.subheader(f"{persona.name}  (Cluster {selection})")
+    st.markdown(
+        f"""
+        <div style="border-left:4px solid {color};padding:4px 0 4px 14px;
+            margin-bottom:10px;">
+          <div style="font-size:22px;font-weight:700;color:{INK};">
+            {persona.name}</div>
+          <div style="font-size:13px;color:{MUTED};">Segment {selection}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
     st.write(persona.description)
 
     if prof is not None:
+        avg_income = float(stats.loc[selection, "avg_income"])
+        avg_spending = float(stats.loc[selection, "avg_spending"])
+        avg_age = float(stats.loc[selection, "avg_age"])
+        top_genre = str(stats.loc[selection, "top_genre"])
+
         m1, m2, m3, m4 = st.columns(4)
         with m1:
-            kpi_card("Segment Size", f"{prof.customer_count:,}", "customers", "#2563eb")
+            kpi_card("Customers", f"{prof.customer_count:,}", f"{prof.percentage}% of base", color)
         with m2:
-            kpi_card("Percentage", f"{prof.percentage}%", "of base", "#16a34a")
+            kpi_card("Avg Income", fmt_income(avg_income), "per customer", "#ea580c")
         with m3:
-            kpi_card("Avg Income", f"${avg_income:,.1f}k", "per customer", "#ea580c")
+            kpi_card("Avg Spending", f"{avg_spending:,.1f}", "score (1-100)", "#7c3aed")
         with m4:
-            kpi_card("Avg Spending", f"{avg_spending:,.1f}", "score (1-100)", "#9333ea")
+            kpi_card("Avg Age", f"{avg_age:,.0f}", f"top gender: {top_genre}", "#0891b2")
 
-        st.subheader("Profile")
+        st.markdown("###### Profile")
         st.write(prof.profile_summary)
         if prof.key_characteristics:
             st.markdown("**Key characteristics:** " + ", ".join(prof.key_characteristics))
 
+        st.markdown("###### Recommended Action")
+        st.success(persona.strategy)
+
     if insight is not None:
-        st.subheader("Business Recommendations")
+        st.markdown("###### Business Recommendations")
         b1, b2 = st.columns(2)
         with b1:
             st.markdown("**Business interpretation**")
@@ -766,15 +1378,62 @@ def section_explorer(base: dict[str, Any], active: dict[str, Any]) -> None:
             st.markdown("**Retention & engagement**")
             st.write(insight.retention_engagement_recommendation)
 
+    # ------------------------------------------------------------------ #
+    # Segment comparison vs overall population
+    # ------------------------------------------------------------------ #
+    st.divider()
+    st.markdown("##### Segment vs Overall Population")
+    st.caption(
+        "How each segment differs from the overall customer base. "
+        "Values are standardised differences (Cohen's d): "
+        "positive = above average, negative = below average."
+    )
+    comp_data = active.get("segment_comparison")
+    if comp_data:
+        from src.analytics import comparison_to_dataframe
+
+        comp_df = comparison_to_dataframe(comp_data)
+        comp_display = comp_df.copy()
+        for col in comp_display.columns:
+            if col != "Cluster":
+                comp_display[col] = comp_display[col].apply(
+                    lambda v: f"{v:+.2f}" if isinstance(v, (int, float)) else v
+                )
+        styled_metric_table(comp_display)
+    else:
+        st.info("Segment comparison is not available for this configuration.")
+
+    # ------------------------------------------------------------------ #
+    # Feature separation / importance
+    # ------------------------------------------------------------------ #
+    st.divider()
+    st.markdown("##### Feature Separation Analysis")
+    st.caption(
+        "ANOVA F-ratios showing which features most strongly differentiate "
+        "the segments. Higher F-ratio = more important for distinguishing "
+        "between clusters. This is the appropriate interpretation for "
+        "clustering (not supervised feature importance)."
+    )
+    sep_data = active.get("feature_separation")
+    if sep_data:
+        sep_rows = [
+            {"Feature": r.feature, "F-Ratio": r.f_ratio, "Rank": r.rank}
+            for r in sorted(sep_data, key=lambda x: x.rank)
+        ]
+        sep_df = pd.DataFrame(sep_rows)
+        styled_metric_table(sep_df)
+    else:
+        st.info("Feature separation analysis is not available for this configuration.")
+
 
 # ===========================================================================
 # Section 6 - New Customer Prediction
 # ===========================================================================
 def section_predict(base: dict[str, Any]) -> None:
-    st.header("New Customer Prediction")
-    st.caption(
-        "Enter a customer's attributes to assign them to a segment and "
-        "receive a tailored business recommendation."
+    section_header(
+        "New Customer Prediction",
+        "Enter a customer's attributes to assign them to a segment and receive "
+        "a tailored business recommendation.",
     )
 
     bundle = load_prediction_model()
@@ -789,12 +1448,16 @@ def section_predict(base: dict[str, Any]) -> None:
         return
 
     cfg_used = bundle.get("config", {})
-    st.info(
+    st.caption(
         f"Using deployed model: **{cfg_label(cfg_used)}**. "
         "The model is loaded once and reused - submitting the form does not "
         "retrain it."
     )
 
+    # ------------------------------------------------------------------ #
+    # Customer Information
+    # ------------------------------------------------------------------ #
+    st.markdown("##### Customer Information")
     with st.form("prediction_form"):
         c1, c2 = st.columns(2)
         with c1:
@@ -810,7 +1473,6 @@ def section_predict(base: dict[str, Any]) -> None:
         submitted = st.form_submit_button("Predict Segment", type="primary")
 
     if submitted:
-        # Input validation.
         problems = []
         if not (10 <= age <= 100):
             problems.append("Age must be between 10 and 100.")
@@ -821,62 +1483,95 @@ def section_predict(base: dict[str, Any]) -> None:
         if problems:
             for p in problems:
                 st.warning(p)
-            return
+        else:
+            with st.spinner("Assigning to segment..."):
+                pred = predict_new(bundle, int(age), genre, float(income), float(spending))
+            if pred is None or pred["persona"] is None:
+                show_error(
+                    "Could not assign this customer to a segment.",
+                    "The model has no valid cluster centres. Retrain it from the "
+                    "Clustering Lab.",
+                )
+            else:
+                st.session_state.last_prediction = {
+                    "pred": pred, "age": age, "genre": genre,
+                    "income": income, "spending": spending,
+                }
 
-        with st.spinner("Assigning to segment..."):
-            pred = predict_new(bundle, int(age), genre, float(income), float(spending))
+    # ------------------------------------------------------------------ #
+    # Prediction Result
+    # ------------------------------------------------------------------ #
+    st.divider()
+    st.markdown("##### Prediction Result")
+    pred_state = st.session_state.get("last_prediction")
+    if not pred_state:
+        st.info("Enter a customer's details above and choose **Predict Segment** "
+                "to see their assigned persona and recommended strategy.")
+        return
 
-        if pred is None or pred["persona"] is None:
-            show_error(
-                "Could not assign this customer to a segment.",
-                "The model has no valid cluster centres. Retrain it from the "
-                "Clustering Lab.",
-            )
-            return
+    pred = pred_state["pred"]
+    persona = pred["persona"]
+    insight = _PERSONA_INSIGHTS.get(persona.key)
+    color = PERSONA_COLORS.get(persona.key, "#94a3b8")
 
-        persona = pred["persona"]
-        insight = _PERSONA_INSIGHTS.get(persona.key)
-        st.success(
-            f"Customer assigned to **Cluster {pred['cluster_id']} - "
-            f"{persona.name}** (distance to centroid: {pred['distance']:.2f})."
-        )
+    st.markdown(
+        f"""
+        <div style="background:#ffffff;border:1px solid {BORDER};
+            border-left:4px solid {color};border-radius:10px;
+            padding:16px 18px;box-shadow:0 1px 2px rgba(15,23,42,0.04);">
+          <div style="font-size:12px;font-weight:700;color:{MUTED};
+            text-transform:uppercase;letter-spacing:0.05em;">Assigned persona</div>
+          <div style="font-size:22px;font-weight:700;color:{INK};margin:4px 0;">
+            {persona.name}</div>
+          <div style="font-size:13px;color:{MUTED};">
+            Segment {pred['cluster_id']} &nbsp;·&nbsp; distance to centre:
+            {pred['distance']:.2f}
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-        st.subheader(persona.name)
-        st.write(persona.description)
-
-        if insight is not None:
-            st.subheader("Business Recommendation")
-            r1, r2 = st.columns(2)
-            with r1:
-                st.markdown("**Marketing strategy**")
-                st.write(insight.recommended_marketing_strategy)
-                st.markdown("**Opportunity**")
-                st.write(insight.potential_opportunity)
-            with r2:
-                st.markdown("**Retention & engagement**")
-                st.write(insight.retention_engagement_recommendation)
-                st.markdown("**Interpretation**")
-                st.write(insight.business_interpretation)
+    st.markdown("###### Explanation")
+    st.write(persona.description)
+    if insight is not None:
+        st.markdown("###### Recommended Strategy")
+        st.success(persona.strategy)
+        r1, r2 = st.columns(2)
+        with r1:
+            st.markdown("**Opportunity**")
+            st.write(insight.potential_opportunity)
+            st.markdown("**Retention & engagement**")
+            st.write(insight.retention_engagement_recommendation)
+        with r2:
+            st.markdown("**Marketing strategy**")
+            st.write(insight.recommended_marketing_strategy)
+            st.markdown("**Interpretation**")
+            st.write(insight.business_interpretation)
 
 
 # ===========================================================================
 # Section 7 - Export
 # ===========================================================================
 def section_export(base: dict[str, Any], active: dict[str, Any]) -> None:
-    st.header("Export")
-    st.caption("Download analysis artefacts as CSV for downstream use.")
+    section_header(
+        "Export",
+        "Download analysis artefacts as CSV for downstream reporting and BI tools.",
+    )
 
     # 1. Segmented customers
     cleaned = base["cleaned"].copy()
     if active.get("labels") is not None:
-        cleaned["Cluster"] = active["labels"]
+        cleaned["Segment"] = active["labels"]
         seg_csv = cleaned.to_csv(index=False).encode("utf-8")
         st.download_button(
-            "Download segmented customers CSV",
+            "Customer segmentation results",
             data=seg_csv,
-            file_name="customers_clustered.csv",
+            file_name="customer_segmentation_results.csv",
             mime="text/csv",
+            help="Every customer with their assigned segment for the active configuration.",
         )
+        st.caption("All customers and their assigned segment (CSV).")
 
     # 2. Segment summary
     if active.get("profiles"):
@@ -885,7 +1580,7 @@ def section_export(base: dict[str, Any], active: dict[str, Any]) -> None:
             persona = active["personas"].get(p.cluster_id)
             rows.append(
                 {
-                    "Cluster": p.cluster_id,
+                    "Segment": p.cluster_id,
                     "Persona": p.persona_name,
                     "Customers": p.customer_count,
                     "Percentage": p.percentage,
@@ -896,37 +1591,49 @@ def section_export(base: dict[str, Any], active: dict[str, Any]) -> None:
             )
         summary_csv = pd.DataFrame(rows).to_csv(index=False).encode("utf-8")
         st.download_button(
-            "Download segment summary CSV",
+            "Segment summary",
             data=summary_csv,
             file_name="segment_summary.csv",
             mime="text/csv",
+            help="One row per segment with size, profile and recommended strategy.",
         )
+        st.caption("Per-segment size, profile and strategy (CSV).")
 
     # 3. Model comparison
     with st.spinner("Building model comparison..."):
-        with warnings.catch_warnings():
+        with _suppress_warnings():
             warnings.simplefilter("ignore")
             table = run_full_evaluation(base["X"])
-    comp_csv = pd.DataFrame(table.rows).to_csv(index=False).encode("utf-8")
+    comp_df = pd.DataFrame(table.rows)
+    if "Algorithm" in comp_df.columns:
+        comp_df["Algorithm"] = comp_df["Algorithm"].map(
+            lambda a: ALGORITHMS.get(a, str(a))
+        )
+    comp_csv = comp_df.to_csv(index=False).encode("utf-8")
     st.download_button(
-        "Download model comparison CSV",
+        "Model evaluation",
         data=comp_csv,
-        file_name="model_comparison.csv",
+        file_name="model_evaluation.csv",
         mime="text/csv",
+        help="Metric scores for every candidate algorithm and configuration.",
     )
+    st.caption("Silhouette, Calinski-Harabasz, Davies-Bouldin and inertia per model (CSV).")
 
+    # 4. Cluster insights report
     st.divider()
-    st.subheader("Cluster Insights Report")
+    st.markdown("##### Cluster Insights Report")
     if active.get("profiles") and active.get("personas"):
         profiles_df = build_cluster_profiles(base["cleaned"], active["labels"])
         insights = generate_cluster_insights(profiles_df, active["personas"])
         report = "\n\n".join(insights)
         st.download_button(
-            "Download cluster insights TXT",
+            "Customer segment insights",
             data=report.encode("utf-8"),
-            file_name="cluster_insights.txt",
+            file_name="cluster_insights_report.txt",
             mime="text/plain",
+            help="Plain-text narrative of every segment, its size and strategy.",
         )
+        st.caption("Human-readable narrative of all segments (TXT).")
         with st.expander("Preview insights"):
             st.text(report)
 
@@ -937,15 +1644,27 @@ def section_export(base: dict[str, Any], active: dict[str, Any]) -> None:
 def main() -> None:
     st.set_page_config(
         page_title="Customer Segmentation Dashboard",
-        page_icon="📊",
+        page_icon=":bar_chart:",
         layout="wide",
     )
 
     st.markdown(
-        """
+        f"""
         <style>
-        .block-container { padding-top: 1.2rem; }
-        h1, h2, h3 { color: #111827; }
+        html, body, .stApp {{ font-family: {CHART_FONT}; color: {INK}; }}
+        .block-container {{ padding-top: 1.4rem; padding-bottom: 2rem; }}
+        h1, h2, h3 {{ color: {INK}; font-weight: 700; }}
+        h2 {{ font-size: 1.45rem; }}
+        h3 {{ font-size: 1.05rem; }}
+        .stCaption {{ color: {MUTED}; }}
+        .stTabs [data-baseweb="tab-list"] {{
+            gap: 4px; border-bottom: 1px solid {BORDER};
+        }}
+        .stTabs [data-baseweb="tab"] {{
+            height: 42px; font-weight: 600; color: {MUTED};
+        }}
+        .stTabs [aria-selected="true"] {{ color: {PRIMARY}; }}
+        section [data-testid="stExpander"] {{ border: 1px solid {BORDER}; }}
         </style>
         """,
         unsafe_allow_html=True,
@@ -953,8 +1672,8 @@ def main() -> None:
 
     st.title("Intelligent Customer Segmentation")
     st.caption(
-        "A modular K-Means / Agglomerative / DBSCAN / GMM segmentation "
-        "dashboard powered by the project's reusable ML pipeline."
+        "A modular segmentation dashboard (K-Means, Agglomerative, DBSCAN and "
+        "Gaussian Mixture) powered by the project's reusable ML pipeline."
     )
 
     # Initialise session state.
@@ -964,17 +1683,22 @@ def main() -> None:
         st.session_state.active = None
     if "active_key" not in st.session_state:
         st.session_state.active_key = None
+    if "last_prediction" not in st.session_state:
+        st.session_state.last_prediction = None
 
     base = get_base()
     if base.get("error"):
+        logger.error("Dataset loading failed: %s", base["error"])
         st.error("Could not load the dataset.")
         st.caption(base["error"])
         st.stop()
         return
 
+    logger.info("App initialised with algorithm=%s", st.session_state.cfg["algorithm"])
+
     # Sidebar.
     with st.sidebar:
-        st.header("Configuration")
+        st.markdown("### Configuration")
         cfg = st.session_state.cfg
         st.write(f"**Algorithm:** {ALGORITHMS.get(cfg['algorithm'], cfg['algorithm'])}")
         st.write(f"**Setup:** {cfg_label(cfg)}")
@@ -988,6 +1712,7 @@ def main() -> None:
             st.cache_resource.clear()
             st.session_state.active = None
             st.session_state.active_key = None
+            st.session_state.last_prediction = None
             st.rerun()
 
     active = get_active(base)

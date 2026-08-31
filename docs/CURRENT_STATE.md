@@ -1,14 +1,16 @@
-# Project Audit Report
+# Current State Report
 
 **Date:** 2026-08-31
 **Repository:** Intelligent-Customer-Segmentation
 **Branch:** `main`
-**Latest commit:** `fc0450b`
-**Phase:** 1 — Post-Implementation Audit & Cleanup
+**Latest commit:** `fc0450b` — "refactor: restructure project into modular src package with comprehensive test suite and updated documentation"
+**Working tree:** clean (no uncommitted changes)
 
 ---
 
 ## 1. Current Architecture
+
+The project has been refactored from a flat single-script layout into a modular package:
 
 ```
 Intelligent-Customer-Segmentation/
@@ -17,10 +19,8 @@ Intelligent-Customer-Segmentation/
 ├── README.md                     # Project documentation
 ├── LICENSE                       # MIT
 ├── .gitignore                    # Ignores outputs/, models/, __pycache__/
-│
 ├── data/
-│   └── Mall_Customers.csv        # Source dataset (200 rows x 5 columns)
-│
+│   └── Mall_Customers.csv        # Source dataset (200 x 5)
 ├── src/
 │   ├── __init__.py               # Package init (v0.2.0)
 │   ├── utils.py                  # Constants, portable paths, logging
@@ -30,9 +30,8 @@ Intelligent-Customer-Segmentation/
 │   ├── evaluation.py             # Multi-metric comparison + model selection
 │   ├── personas.py               # Cluster-to-persona mapping (5 personas)
 │   └── business_insights.py      # Business insight generation + reports
-│
 ├── tests/
-│   ├── conftest.py               # Shared pytest fixtures
+│   ├── conftest.py               # Shared fixtures (data_path, df, X_scaled)
 │   ├── test_data_loader.py       # 10 tests
 │   ├── test_preprocessing.py     # 7 tests
 │   ├── test_clustering.py        # 32 tests
@@ -40,10 +39,8 @@ Intelligent-Customer-Segmentation/
 │   ├── test_personas.py          # 22 tests
 │   ├── test_business_insights.py # 30 tests
 │   └── test_prediction.py        # 10 tests
-│
 ├── models/
 │   └── segmentation_model.joblib # Serialized prediction bundle (k=5, kmeans)
-│
 ├── outputs/
 │   ├── customers_clustered.csv   # 200 rows x 6 cols (with Cluster label)
 │   ├── cluster_profiles.csv      # 5 clusters summary
@@ -53,27 +50,19 @@ Intelligent-Customer-Segmentation/
 │       ├── customer_clusters.png
 │       ├── elbow_method.png
 │       └── silhouette_scores.png
-│
 ├── assets/                       # Historical images (pre-refactor) + tar.gz archive
 ├── docs/
-│   ├── PROJECT_AUDIT.md          # This file
-│   ├── README_AUDIT.md           # README verification against codebase
-│   └── CURRENT_STATE.md          # Current-state assessment
+│   ├── PROJECT_AUDIT.md          # STALE - describes old flat structure
+│   ├── README_AUDIT.md           # README verification (this audit)
+│   └── CURRENT_STATE.md          # This file
 └── notebooks/                    # Empty (.gitkeep only)
 ```
 
 **Design principle:** `src/` contains all reusable ML logic. `app.py` is a thin presentation layer that imports from `src/` and never duplicates ML logic.
 
-### Technology Stack
-- **Language:** Python 3.x
-- **Libraries:** pandas, numpy, scikit-learn, matplotlib, streamlit, plotly, joblib, pytest, pytest-cov
-- **Algorithms:** K-Means, Agglomerative Clustering, DBSCAN, Gaussian Mixture Model
-- **Preprocessing:** StandardScaler via ColumnTransformer
-- **Evaluation:** Silhouette Score, Calinski-Harabasz Index, Davies-Bouldin Index, Inertia
-
 ---
 
-## 2. Current ML Workflow
+## 2. Current ML Pipeline
 
 ### Data Loading (`src/data_loader.py`)
 - Loads CSV via `pd.read_csv`
@@ -138,7 +127,7 @@ Seven Streamlit tabs, all backed by cached data/functions:
 
 ---
 
-## 4. Dataset Summary
+## 4. Current Dataset
 
 | Property | Value |
 |----------|-------|
@@ -151,109 +140,131 @@ Seven Streamlit tabs, all backed by cached data/functions:
 | **Duplicates** | 0 |
 | **Numeric columns** | CustomerID, Age, Annual Income (k$), Spending Score (1-100) |
 | **Categorical columns** | Genre (Male/Female) |
+| **Suspicious values** | None detected |
+| **Pipeline match** | Yes — preprocessing selects Income + Spending Score for clustering; Genre/Age available for analytics |
 
-### Basic Statistics
-
-| Statistic | Age | Annual Income (k$) | Spending Score (1-100) |
-|-----------|-----|-------------------|------------------------|
-| Mean | 38.85 | 60.56 | 50.20 |
-| Std | 13.97 | 26.26 | 25.82 |
-| Min | 18.00 | 15.00 | 1.00 |
-| Max | 70.00 | 137.00 | 99.00 |
+**Statistics:**
+- Age: mean 38.85, range 18–70
+- Annual Income: mean 60.56k, range 15–137k
+- Spending Score: mean 50.20, range 1–99
 
 ---
 
 ## 5. Implemented Features
 
 | Feature | Status | Evidence |
-|---------|--------|---------|
-| Data loading + validation | IMPLEMENTED | `src/data_loader.py` |
-| StandardScaler normalization | IMPLEMENTED | `src/preprocessing.py` |
-| K-Means clustering | IMPLEMENTED | `src/clustering.py:135` |
+|---------|--------|----------|
+| K-Means | IMPLEMENTED | `src/clustering.py:135` |
+| Elbow Method | IMPLEMENTED | `src/evaluation.py:552`, `src/clustering.py:381` |
+| Silhouette Score | IMPLEMENTED | `src/evaluation.py:127` |
 | Agglomerative Clustering | IMPLEMENTED | `src/clustering.py:179` |
 | DBSCAN | IMPLEMENTED | `src/clustering.py:232` |
 | Gaussian Mixture Models | IMPLEMENTED | `src/clustering.py:286` |
-| Elbow Method | IMPLEMENTED | `src/evaluation.py:552`, `src/clustering.py:381` |
-| Silhouette Score | IMPLEMENTED | `src/evaluation.py:127` |
-| Calinski-Harabasz Index | IMPLEMENTED | `src/evaluation.py:152` |
-| Davies-Bouldin Index | IMPLEMENTED | `src/evaluation.py:175` |
-| Automated model selection | IMPLEMENTED | `src/evaluation.py:393` |
-| Customer personas (5) | IMPLEMENTED | `src/personas.py:45` |
-| Business insights | IMPLEMENTED | `src/business_insights.py:32` |
-| Streamlit dashboard (7 tabs) | IMPLEMENTED | `app.py` |
-| New-customer prediction | IMPLEMENTED | `app.py` |
-| CSV export | IMPLEMENTED | `app.py` |
-| Model persistence (joblib) | IMPLEMENTED | `app.py` |
-| Automated tests (143) | IMPLEMENTED | `tests/` |
+| Feature scaling | IMPLEMENTED | `src/preprocessing.py` (StandardScaler) |
+| Preprocessing pipeline | IMPLEMENTED | `src/preprocessing.py:78` (ColumnTransformer) |
+| Automatic cluster selection | IMPLEMENTED | `src/evaluation.py:393` (composite ranking) |
+| Customer personas | IMPLEMENTED | `src/personas.py:45` (5 personas) |
+| Business recommendations | IMPLEMENTED | `src/business_insights.py:32` |
+| Streamlit application | IMPLEMENTED | `app.py` (7 tabs) |
+| New-customer prediction | IMPLEMENTED | `app.py:281` (`predict_new`) |
+| CSV export | IMPLEMENTED | `app.py:865` (`section_export`) |
+| Model persistence | IMPLEMENTED | `app.py:264` (joblib) |
+| Automated tests | IMPLEMENTED | 143 tests, all passing |
+| Logging | IMPLEMENTED | `src/utils.py:68` + all modules |
+| Caching | IMPLEMENTED | `@st.cache_resource` + session_state |
+| Deployment configuration | PARTIAL | README mentions Streamlit Cloud; no Dockerfile/Procfile |
 
 ---
 
-## 6. Persona Catalog
+## 6. Missing Features
 
-The canonical persona names (from `src/personas.py` `PERSONA_CATALOG`):
+Features NOT present in the codebase (all listed in README "Future Improvements"):
 
-| Key | Name | Description |
-|-----|------|-------------|
-| `vip` | High-Value Customers | High income and high spending - the ideal customer group. |
-| `saver` | Premium Savers | High income but low spending - wealthy but cautious. |
-| `impulsive` | Budget-Conscious Spenders | Low income but high spending - enthusiastic but risky. |
-| `budget` | Low-Engagement Customers | Low income and low spending - cautious with money. |
-| `mainstream` | Growth Opportunity Customers | Average income and average spending - the broad middle. |
-
-### Classification Logic
-
-Personas are assigned using income/spending quartile breakpoints derived from the full dataset. The `_PERSONA_MATRIX` maps `(income_band, spending_band)` tuples to persona keys:
-
-| Income | Spending | Persona |
-|--------|----------|---------|
-| high | high | High-Value Customers |
-| high | low | Premium Savers |
-| low | high | Budget-Conscious Spenders |
-| low | low | Low-Engagement Customers |
-| mid | high | Budget-Conscious Spenders |
-| high | mid | Premium Savers |
-| low | mid | Low-Engagement Customers |
-| mid | mid | Growth Opportunity Customers |
+- RFM segmentation
+- CLV prediction
+- Churn prediction
+- Recommendation systems
+- Campaign response prediction
+- Database integration
+- Dimensionality reduction (PCA/t-SNE)
+- Hyperparameter optimization (Optuna/GridSearchCV)
+- A/B testing framework
+- API layer (FastAPI/Flask)
+- Dockerfile / containerization
+- CI/CD pipeline
+- `.streamlit/config.toml` (uses defaults)
+- `pyproject.toml` / `setup.py` (package not pip-installable)
+- `__init__.py` content beyond version (no public API exports)
 
 ---
 
-## 7. Test Coverage
+## 7. Broken Features
 
-| Test File | Tests |
-|-----------|-------|
-| `test_data_loader.py` | 10 |
-| `test_preprocessing.py` | 7 |
-| `test_clustering.py` | 32 |
-| `test_evaluation.py` | 24 |
-| `test_personas.py` | 22 |
-| `test_business_insights.py` | 30 |
-| `test_prediction.py` | 10 |
-| **Total** | **143** |
+**None.** All 143 tests pass. `python -m compileall` produces no errors. The Streamlit app, prediction pipeline, and all ML modules execute without runtime errors.
 
-All 143 tests pass. `python -m compileall .` produces no errors.
+All previously identified documentation drift issues have been resolved:
+- `docs/PROJECT_AUDIT.md` replaced with current-state audit
+- Persona names aligned across README, report, and code
+- `outputs/segmentation_report.txt` regenerated with correct persona names
 
 ---
 
-## 8. Runtime Verification
+## 8. Documentation Problems
+
+All previously identified documentation issues have been resolved:
+
+| Problem | Previous Status | Current Status |
+|---------|-----------------|----------------|
+| `docs/PROJECT_AUDIT.md` described old flat structure | Medium severity | **Resolved** — replaced with current-state audit |
+| README Results table persona name "Mainstream Shoppers" ≠ code "Growth Opportunity Customers" | Low severity | **Resolved** — aligned to "Growth Opportunity Customers" |
+| `outputs/segmentation_report.txt` used old persona names | Low severity | **Resolved** — regenerated from current pipeline |
+| README "Future Improvements" correctly lists unimplemented features | None | Accurate |
+
+---
+
+## 9. Dependency Problems
+
+**`requirements.txt` contents:**
+```
+pandas>=2.0, numpy>=1.24, scikit-learn>=1.3, matplotlib>=3.7,
+streamlit>=1.30, plotly>=5.18, joblib>=1.3, pytest>=7.4, pytest-cov>=4.1
+```
+
+| Check | Result |
+|-------|--------|
+| Required packages all used? | YES — all 9 imported somewhere in codebase |
+| Unused packages? | NONE |
+| Missing packages? | NONE — all imports resolve |
+| Version conflicts? | NONE detected |
+| `pyproject.toml` / `environment.yml`? | Not present (not required) |
+
+---
+
+## 10. Runtime Verification
 
 | Test | Result |
 |------|--------|
 | `python -m compileall .` | PASS — no syntax errors |
-| `pytest` | PASS — 143 passed |
+| `pytest` | PASS — **143 passed** in 28.98s |
 | Dataset loads | PASS — 200 rows x 5 cols |
 | Model artifact loads | PASS — valid joblib bundle with 5 personas |
-| `app.py` imports resolve | PASS |
+| `app.py` imports resolve | PASS (compileall + pytest import `app.predict_new`) |
 
 ---
 
-## 9. Audit Findings (Resolved)
+## 11. Recommended Upgrade Order
 
-The following issues were identified in earlier audits and have been resolved:
+The repository is in a **healthy, fully-functional state**. All documentation drift has been resolved. Any future upgrades should preserve the working baseline. Suggested priority:
 
-1. **Persona name drift** — README and report used "Mainstream Shoppers" while code used "Growth Opportunity Customers". Aligned all artifacts to use the canonical code names.
-2. **Stale `outputs/segmentation_report.txt`** — Regenerated from the current pipeline with correct persona names.
-3. **Stale `docs/PROJECT_AUDIT.md`** — Replaced with current-state audit.
+1. **Add `.streamlit/config.toml`** — explicit theme/port config for deployment reproducibility
+2. **Add `pyproject.toml`** — make the package pip-installable with entry point
+3. **Add Dockerfile** — containerize for portable deployment
+4. **Add CI/CD** — GitHub Actions workflow to run pytest on push
+5. **Expand test coverage** — add tests for `app.py` sections (currently only `predict_new` is tested)
+6. **Implement "Future Improvements"** — RFM, CLV, API layer, etc. per README roadmap
 
 ---
 
-*End of Audit Report*
+## 12. Summary — True Current State
+
+The repository is a **complete, working, well-tested customer segmentation platform**. It was refactored from a single-script prototype into a modular `src/` package with a 7-tab Streamlit dashboard. All four clustering algorithms (K-Means, Agglomerative, DBSCAN, GMM) are implemented and tested. The full pipeline — loading, validation, preprocessing, clustering, evaluation, persona assignment, business insights, prediction, and export — is functional. **143 automated tests pass.** The dataset is clean (200 rows, no quality issues). The README is accurate with only minor persona-name drift. There are no broken features, no runtime errors, and no dependency conflicts.

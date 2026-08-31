@@ -6,13 +6,13 @@ This module consumes :mod:`personas` so persona text is never duplicated.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 import numpy as np
 import pandas as pd
 
-from .personas import Persona, PersonaProfile, build_persona_profiles, assign_personas
+from .personas import Persona, PersonaProfile
 from .utils import ANNUAL_INCOME, AGE, GENRE, SPENDING_SCORE
 
 logger = logging.getLogger(__name__)
@@ -132,30 +132,58 @@ def build_cluster_profiles(
     df: pd.DataFrame,
     labels: np.ndarray,
 ) -> pd.DataFrame:
-    """Build a per-cluster profile dataframe.
+    """Build a per-cluster profile dataframe with comprehensive statistics.
+
+    For every numeric feature the profile includes: count, percentage, mean,
+    median, minimum, maximum, and standard deviation.
 
     Parameters
     ----------
     df:
         Cleaned customer dataframe aligned row-for-row with *labels*.
     labels:
-        Cluster label per row (from K-Means).
+        Cluster label per row (from K-Means or other algorithm).
     """
+    if len(df) != len(labels):
+        raise ValueError(
+            f"DataFrame rows ({len(df)}) must match labels length ({len(labels)})."
+        )
+
     profile = df.copy()
     profile["Cluster"] = labels
 
     grouped = profile.groupby("Cluster", observed=True)
+    total = len(df)
 
-    summary = grouped.agg(
-        count=(ANNUAL_INCOME, "size"),
-        avg_age=(AGE, "mean"),
-        avg_income=(ANNUAL_INCOME, "mean"),
-        avg_spending=(SPENDING_SCORE, "mean"),
-    ).round(1)
+    numeric_features = [AGE, ANNUAL_INCOME, SPENDING_SCORE]
+    available = [f for f in numeric_features if f in df.columns]
 
-    summary["top_genre"] = grouped[GENRE].agg(
-        lambda s: s.mode().iloc[0] if not s.mode().empty else None
-    )
+    agg_dict: dict[str, tuple] = {}
+    for f in available:
+        agg_dict[f"{f}_mean"] = (f, "mean")
+        agg_dict[f"{f}_median"] = (f, "median")
+        agg_dict[f"{f}_min"] = (f, "min")
+        agg_dict[f"{f}_max"] = (f, "max")
+        agg_dict[f"{f}_std"] = (f, "std")
+
+    agg_dict["count"] = (AGE, "size")
+
+    summary = grouped.agg(**agg_dict)
+    summary.columns = list(agg_dict.keys())
+    summary = summary.round(2)
+    summary["percentage"] = (100.0 * summary["count"] / total).round(1) if total > 0 else 0.0
+
+    col_order = ["count", "percentage"]
+    for f in available:
+        col_order.extend(
+            [f"{f}_mean", f"{f}_median", f"{f}_min", f"{f}_max", f"{f}_std"]
+        )
+    if GENRE in df.columns:
+        summary["top_genre"] = grouped[GENRE].agg(
+            lambda s: s.mode().iloc[0] if not s.mode().empty else None
+        )
+        col_order.append("top_genre")
+    summary = summary[col_order]
     logger.info("Built profiles for %d clusters", len(summary))
     return summary
 
@@ -169,13 +197,21 @@ def generate_cluster_insights(
     for cluster_id in sorted(personas.keys()):
         row = profiles.loc[cluster_id]
         persona = personas[cluster_id]
+        count = int(row.get("count", 0))
+        pct = float(row.get("percentage", 0.0))
+        avg_age = float(row.get(f"{AGE}_mean", float("nan")))
+        avg_income = float(row.get(f"{ANNUAL_INCOME}_mean", float("nan")))
+        avg_spending = float(row.get(f"{SPENDING_SCORE}_mean", float("nan")))
+        top_genre = str(row.get("top_genre", "Unknown"))
+
         insights.append(
             f"Cluster {cluster_id} - {persona.name} "
             f"({persona.description.strip()})\n"
-            f"  Size: {int(row['count'])} customers | "
-            f"Avg Income: {row['avg_income']}k | "
-            f"Avg Spending: {row['avg_spending']} | "
-            f"Top Genre: {row['top_genre']}\n"
+            f"  Size: {count} customers ({pct}% of total) | "
+            f"Avg Age: {avg_age:.1f} | "
+            f"Avg Income: ${avg_income:.1f}k | "
+            f"Avg Spending: {avg_spending:.1f} | "
+            f"Top Genre: {top_genre}\n"
             f"  Strategy: {persona.strategy}"
         )
     return insights

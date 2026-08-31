@@ -8,7 +8,6 @@ import pytest
 
 from src.preprocessing import (
     CustomerDataPreprocessor,
-    build_scaler,
     remove_duplicates,
     scale_features,
     select_numeric_features,

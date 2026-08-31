@@ -67,8 +67,10 @@ class TestBuildClusterProfiles:
         labels = np.array([0, 0, 1, 1])
         result = build_cluster_profiles(df, labels)
         assert result.loc[0, "count"] == 2
-        assert result.loc[0, "avg_age"] == 25.0
-        assert result.loc[1, "avg_income"] == 35.0
+        assert result.loc[0, f"{AGE}_mean"] == 25.0
+        assert result.loc[1, f"{ANNUAL_INCOME}_mean"] == 35.0
+        assert result.loc[0, f"{AGE}_median"] == 25.0
+        assert result.loc[1, f"{SPENDING_SCORE}_min"] == 3.0
 
     def test_contains_top_genre(self):
         df = pd.DataFrame({
@@ -89,9 +91,10 @@ class TestGenerateClusterInsights:
     def test_returns_list_of_strings(self):
         profiles = pd.DataFrame({
             "count": [10],
-            "avg_age": [30.0],
-            "avg_income": [50.0],
-            "avg_spending": [40.0],
+            "percentage": [50.0],
+            f"{AGE}_mean": [30.0],
+            f"{ANNUAL_INCOME}_mean": [50.0],
+            f"{SPENDING_SCORE}_mean": [40.0],
             "top_genre": ["Female"],
         }, index=[0])
         from src.personas import Persona, PERSONA_CATALOG
@@ -104,9 +107,10 @@ class TestGenerateClusterInsights:
     def test_includes_strategy(self):
         profiles = pd.DataFrame({
             "count": [10],
-            "avg_age": [30.0],
-            "avg_income": [50.0],
-            "avg_spending": [40.0],
+            "percentage": [50.0],
+            f"{AGE}_mean": [30.0],
+            f"{ANNUAL_INCOME}_mean": [50.0],
+            f"{SPENDING_SCORE}_mean": [40.0],
             "top_genre": ["Female"],
         }, index=[0])
         from src.personas import PERSONA_CATALOG
@@ -212,9 +216,10 @@ class TestGenerateReport:
     def test_returns_string(self):
         profiles = pd.DataFrame({
             "count": [10],
-            "avg_age": [30.0],
-            "avg_income": [50.0],
-            "avg_spending": [40.0],
+            "percentage": [50.0],
+            f"{AGE}_mean": [30.0],
+            f"{ANNUAL_INCOME}_mean": [50.0],
+            f"{SPENDING_SCORE}_mean": [40.0],
             "top_genre": ["Female"],
         }, index=[0])
         from src.personas import Persona, PERSONA_CATALOG
@@ -226,9 +231,10 @@ class TestGenerateReport:
     def test_includes_optimal_k(self):
         profiles = pd.DataFrame({
             "count": [10],
-            "avg_age": [30.0],
-            "avg_income": [50.0],
-            "avg_spending": [40.0],
+            "percentage": [50.0],
+            f"{AGE}_mean": [30.0],
+            f"{ANNUAL_INCOME}_mean": [50.0],
+            f"{SPENDING_SCORE}_mean": [40.0],
             "top_genre": ["Female"],
         }, index=[0])
         from src.personas import PERSONA_CATALOG
@@ -238,9 +244,10 @@ class TestGenerateReport:
     def test_includes_silhouette_when_provided(self):
         profiles = pd.DataFrame({
             "count": [10],
-            "avg_age": [30.0],
-            "avg_income": [50.0],
-            "avg_spending": [40.0],
+            "percentage": [50.0],
+            f"{AGE}_mean": [30.0],
+            f"{ANNUAL_INCOME}_mean": [50.0],
+            f"{SPENDING_SCORE}_mean": [40.0],
             "top_genre": ["Female"],
         }, index=[0])
         from src.personas import PERSONA_CATALOG

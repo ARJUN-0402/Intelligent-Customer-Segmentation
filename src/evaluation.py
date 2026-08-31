@@ -555,7 +555,18 @@ def compute_elbow_curve(
     random_state: int = DEFAULT_RANDOM_STATE,
     n_init: int = N_INIT,
 ) -> ElbowResult:
-    """Compute K-Means inertia for each ``k`` to form the elbow curve."""
+    """Compute K-Means inertia for each ``k`` to form the elbow curve.
+
+    .. deprecated::
+        Use :func:`src.clustering.evaluate_k_range` instead.
+    """
+    import warnings
+
+    warnings.warn(
+        "compute_elbow_curve is deprecated; use evaluate_k_range from src.clustering.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     from src.clustering import build_kmeans
 
     ks = list(k_range) if k_range is not None else list(_k_range())
@@ -574,7 +585,18 @@ def compute_silhouette_scores(
     random_state: int = DEFAULT_RANDOM_STATE,
     n_init: int = N_INIT,
 ) -> SilhouetteResult:
-    """Compute silhouette scores for each ``k``."""
+    """Compute silhouette scores for each ``k``.
+
+    .. deprecated::
+        Use :func:`src.clustering.evaluate_k_range` instead.
+    """
+    import warnings
+
+    warnings.warn(
+        "compute_silhouette_scores is deprecated; use evaluate_k_range from src.clustering.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     from src.clustering import build_kmeans
 
     ks = list(k_range) if k_range is not None else list(_k_range())
@@ -592,7 +614,18 @@ def compute_silhouette_scores(
 
 
 def find_optimal_k(silhouette: SilhouetteResult) -> int:
-    """Return the ``k`` with the highest silhouette score."""
+    """Return the ``k`` with the highest silhouette score.
+
+    .. deprecated::
+        Use :func:`src.clustering.evaluate_k_range` instead.
+    """
+    import warnings
+
+    warnings.warn(
+        "find_optimal_k is deprecated; use evaluate_k_range from src.clustering.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     if not silhouette.scores:
         raise ValueError("SilhouetteResult contains no scores.")
     optimal = int(
@@ -606,7 +639,18 @@ def plot_elbow_curve(
     result: ElbowResult,
     save_path: Optional[Path] = None,
 ) -> Path:
-    """Plot and save the elbow curve."""
+    """Plot and save the elbow curve.
+
+    .. deprecated::
+        Use :func:`src.clustering.evaluate_k_range` for data and plot manually.
+    """
+    import warnings
+
+    warnings.warn(
+        "plot_elbow_curve is deprecated.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     import matplotlib.pyplot as plt
 
     fig, ax = plt.subplots(figsize=(8, 5))
@@ -627,7 +671,18 @@ def plot_silhouette_scores(
     result: SilhouetteResult,
     save_path: Optional[Path] = None,
 ) -> Path:
-    """Plot and save the silhouette-score curve."""
+    """Plot and save the silhouette-score curve.
+
+    .. deprecated::
+        Use :func:`src.clustering.evaluate_k_range` for data and plot manually.
+    """
+    import warnings
+
+    warnings.warn(
+        "plot_silhouette_scores is deprecated.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     import matplotlib.pyplot as plt
 
     fig, ax = plt.subplots(figsize=(8, 5))

@@ -15,12 +15,8 @@ import pandas as pd
 from .utils import (
     ANNUAL_INCOME,
     AGE,
-    CATEGORICAL_COLUMNS,
     CUSTOMER_ID,
-    FEATURE_COLUMNS,
     GENRE,
-    LABEL_MAP,
-    NUMERIC_COLUMNS,
     SPENDING_SCORE,
 )
 

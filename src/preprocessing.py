@@ -19,14 +19,9 @@ from sklearn.pipeline import Pipeline as SkPipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 from .utils import (
-    ANNUAL_INCOME,
-    AGE,
     CATEGORICAL_COLUMNS,
     CUSTOMER_ID,
-    FEATURE_COLUMNS,
-    GENRE,
     NUMERIC_COLUMNS,
-    SPENDING_SCORE,
 )
 
 logger = logging.getLogger(__name__)

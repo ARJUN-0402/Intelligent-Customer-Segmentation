@@ -1,117 +1,186 @@
 # Intelligent Customer Segmentation
 
-An end-to-end machine learning platform for customer segmentation, clustering evaluation, persona generation, and business insight delivery. The project combines a reusable scikit-learn pipeline with an interactive Streamlit dashboard.
+> End-to-end customer intelligence platform using unsupervised machine learning to discover customer segments, generate data-driven personas, evaluate clustering strategies, and translate analytical findings into actionable business insights.
 
-## Description
+## What it is
 
-This project segments customers into interpretable groups using multiple clustering algorithms, evaluates them with standard unsupervised metrics, maps each cluster to a named persona, and surfaces actionable business recommendations through a web dashboard. All ML logic is isolated in reusable `src/` modules; the Streamlit app (`app.py`) is a thin presentation layer that loads data, runs clustering, evaluates models, assigns personas, and enables new-customer prediction without retraining.
+An applied machine-learning project that turns raw customer records into a usable segmentation strategy. A reproducible `src/` pipeline loads and validates the data, preprocesses it, runs four unsupervised clustering algorithms, scores each configuration with standard metrics, selects the best strategy, and maps every cluster to a named business persona with concrete recommendations. A Streamlit dashboard exposes the whole analysis interactively, and a trained model predicts the segment of any new customer without retraining.
 
-## Features
+## Why it matters
 
-- **Modular ML pipeline** — loading, validation, preprocessing, clustering, evaluation, persona assignment, and business insights are each isolated in `src/` modules with no duplication in the dashboard.
-- **Multiple clustering algorithms** — K-Means, Agglomerative Clustering, DBSCAN, and Gaussian Mixture Model (GMM) through a unified `run_clustering` dispatcher.
-- **Standardized preprocessing** — duplicate removal, missing-value imputation, one-hot encoding of categoricals, and `StandardScaler` normalization of numerics via a single reusable `ColumnTransformer` pipeline.
-- **Multi-metric evaluation** — Silhouette Score, Calinski-Harabasz Index, Davies-Bouldin Index, and K-Means Inertia. Metrics are only computed when meaningful for the algorithm and cluster count.
-- **Automated model selection** — candidate configurations are ranked by a dataset-specific composite of normalized metrics, producing a recommended configuration.
-- **Persona generation** — each cluster is mapped to one of five business personas using income/spending quartile breakpoints derived from the full dataset.
-- **Business insights** — every persona includes a business interpretation, opportunity, recommended marketing strategy, and retention/engagement recommendation.
-- **Interactive dashboard** — seven Streamlit sections for executive KPIs, exploratory analytics, clustering experimentation, model comparison, segment drill-down, new-customer prediction, and CSV export.
-- **Persistent prediction model** — the active segmentation model is serialized with `joblib` so the prediction form assigns new customers to segments without retraining.
-- **Validation and testing** — 143 pytest cases covering data loading, preprocessing, clustering algorithms, evaluation, personas, business insights, and the prediction pipeline.
+One-size-fits-all campaigns waste budget and miss high-value opportunities. By discovering segments empirically and attaching data-driven personas and strategies, this project gives marketing, product, and retention teams a defensible, evidence-based view of their customer base — plus a reusable workflow they can point at larger datasets.
 
-## Business Problem
+## Technologies
 
-Customer segmentation groups a customer base into distinct segments with shared characteristics. Without segmentation, marketing, product, and retention teams rely on one-size-fits-all campaigns that waste budget on irrelevant offers and miss high-value opportunities. By identifying groups such as high-income high-spending VIPs, high-income low-spending savers, and low-income high-spending impulsive buyers, businesses can:
+`Python` · `scikit-learn` · `pandas` · `numpy` · `Streamlit` · `Plotly` · `joblib` · `pytest`
 
-- tailor promotions and product recommendations to each segment,
-- allocate marketing budget toward the most profitable groups,
-- design retention strategies for at-risk or high-potential segments,
-- and measure campaign effectiveness against well-defined customer profiles.
+## Dashboard
 
-## Technical Architecture
+An interactive **seven-tab Streamlit dashboard** (`app.py`) is included and runs locally with `streamlit run app.py`. It covers an executive overview, customer analytics, a clustering lab, model comparison, a segment explorer, new-customer prediction, and exports.
+
+## Key capabilities
+
+- **Four clustering algorithms** — K-Means, Agglomerative, DBSCAN, and Gaussian Mixture Models behind a single dispatcher.
+- **Reproducible preprocessing** — deduplication, missing-value imputation, encoding, and `StandardScaler` via a `ColumnTransformer`.
+- **Multi-metric evaluation** — Silhouette, Calinski-Harabasz, Davies-Bouldin, and Inertia, with a composite score that recommends the best configuration.
+- **Data-driven personas** — five business personas derived from cluster centers and dataset quartiles, each with strategy and recommendations.
+- **Analytical depth** — segment-vs-overall comparison (Cohen's d), ANOVA feature separation, and K-Means stability (ARI).
+- **Prediction** — assign a new customer to the nearest centroid and return persona + strategy, with no retraining.
+- **Export** — CSV and TXT artefacts for segmented customers, summaries, evaluation, and insights.
+- **Tests** — 199 automated pytest cases across the full pipeline.
+
+### Architecture
 
 ```mermaid
 flowchart LR
-    A[Customer Data] --> B[Validation]
-    B --> C[Preprocessing]
-    C --> D[Feature Engineering]
-    D --> E[Clustering]
+    A[Customer Data CSV] --> B[Data Loader]
+    B --> C[Validation]
+    C --> D[Preprocessing]
+    D --> E[Clustering Engine]
     E --> F[Evaluation]
     F --> G[Model Selection]
-    G --> H[Personas]
+    G --> H[Persona Assignment]
     H --> I[Business Insights]
     I --> J[Streamlit Dashboard]
+    J --> K[Export / Prediction]
 ```
 
-## Machine Learning
+### Machine Learning Pipeline
+
+The pipeline follows a linear, reproducible flow:
+
+```text
+Data
+→ Validation
+→ Preprocessing
+→ Clustering
+→ Evaluation
+→ Model Selection
+→ Personas
+→ Business Insights
+→ Prediction
+```
+
+1. **Data** — loads `Mall_Customers.csv` (200 rows, 5 columns) via `src/data_loader.py`.
+2. **Validation** — checks file existence, empty rows, required columns, and dtype schema.
+3. **Preprocessing** — deduplicates, imputes missing values, one-hot encodes `Genre`, and scales numerics with `StandardScaler` via `ColumnTransformer`.
+4. **Clustering** — fits the selected algorithm (K-Means, Agglomerative, DBSCAN, or GMM) and returns labels and cluster centers.
+5. **Evaluation** — computes applicable metrics: Silhouette Score, Calinski-Harabasz Index, Davies-Bouldin Index, and Inertia (K-Means only).
+6. **Model Selection** — normalizes metrics to [0,1], averages available scores, and ranks candidates to recommend the best configuration for the dataset.
+7. **Personas** — maps each cluster center to a persona using income/spending quartile breakpoints derived from the full dataset.
+8. **Business Insights** — generates per-persona interpretations, opportunities, marketing strategies, and retention recommendations.
+9. **Prediction** — assigns a new customer to the nearest cluster centroid and returns the corresponding persona and strategy.
 
 ### Algorithms
 
-| Algorithm | Implementation | Key Parameters |
-|-----------|---------------|----------------|
-| **K-Means** | `sklearn.cluster.KMeans` | `n_clusters`, `n_init=10`, `k-means++` init |
-| **Agglomerative Clustering** | `sklearn.cluster.AgglomerativeClustering` | `n_clusters`, `linkage` (ward, complete, average, single) |
-| **DBSCAN** | `sklearn.cluster.DBSCAN` | `eps`, `min_samples`, euclidean metric |
-| **Gaussian Mixture Model** | `sklearn.mixture.GaussianMixture` | `n_components`, `covariance_type` |
+* **K-Means** — partitions customers into a fixed number of spherical, equally sized groups by iteratively moving centroids to minimize within-cluster sum of squares. Fast and easy to explain. Best when segments are roughly round and similarly dense. The default and reference algorithm for elbow/silhouette analysis.
 
-All algorithms are wrapped in a `ClusterResult` dataclass that exposes `labels`, `cluster_centers`, `n_clusters`, `inertia` (K-Means only), `noise_points` (DBSCAN only), `bic`/`aic` (GMM only), and a `valid` flag.
+* **Agglomerative Clustering** — starts with each customer as its own group and repeatedly merges the closest pairs. The linkage method controls how "closeness" is measured, which shapes the final segment geometry. Useful when you need a hierarchy of merges or when non-spherical segment shapes are expected.
 
-### Feature Scaling
+* **DBSCAN** — discovers dense regions of customers and marks sparse areas as noise instead of forcing every customer into a segment. Does not require a fixed number of segments. Sensitive to `eps` and `min_samples`; most useful when the data contains natural density variations or outliers.
 
-Numeric features (`Annual Income (k$)` and `Spending Score (1-100)`) are standardized with `StandardScaler` inside a scikit-learn `ColumnTransformer`. Categorical features (`Genre`) are one-hot encoded when included. The preprocessor supports inverse-transforming cluster centers back to the original scale for business-readable reporting.
+* **Gaussian Mixture Model (GMM)** — fits overlapping bell-shaped distributions and assigns each customer a probability of belonging to each segment. Captures softer, overlapping membership better than K-Means. Useful when segment boundaries are ambiguous and probabilistic assignment is preferred.
 
 ### Evaluation Metrics
 
-- **Silhouette Score** — measures cluster cohesion vs. separation. Higher is better. Requires at least two clusters.
-- **Calinski-Harabasz Index** — ratio of between-cluster dispersion to within-cluster dispersion. Higher is better.
-- **Davies-Bouldin Index** — average similarity of each cluster to its most similar cluster. Lower is better.
-- **Inertia (WCSS)** — sum of squared distances to the nearest cluster center. K-Means only; lower is better.
+* **Silhouette Score** — compares each customer's distance to its own segment center against its distance to the next nearest center. Ranges from -1 (overlapping) to 1 (perfectly distinct). Higher is better. Requires at least two clusters. Values above ~0.5 indicate reasonably separated segments.
 
-### Model Selection
+* **Davies-Bouldin Index** — measures the average "similarity" between each segment and its most similar neighboring segment, where similarity combines spread and separation. Lower is better. A value of 0 would indicate perfectly compact and well-separated segments.
 
-The `select_best_clustering_model` function evaluates a list of candidate configurations, normalizes each metric to `[0, 1]` (reversing lower-is-better metrics), averages the available normalized scores per model, and ranks candidates by composite score. Ties are broken alphabetically by algorithm name. The recommended configuration is surfaced in the dashboard.
+* **Calinski-Harabasz Index** — the ratio of between-segment dispersion to within-segment dispersion. Higher is better. There is no fixed upper bound, so it is interpreted relative to other configurations on the same dataset.
 
-## Dataset
+* **Inertia (WCSS)** — the sum of squared distances from each customer to its assigned segment center. K-Means only. Lower means customers sit closer to their center. It always decreases as the number of segments increases, so it is used for the "elbow" shape rather than for direct comparison across different k values.
 
-The project uses the **Mall Customers** dataset, included as `data/Mall_Customers.csv`. It contains **200 rows** and **5 columns**:
+### Dataset
+
+The project uses the **Mall Customers** dataset (`data/Mall_Customers.csv`), a small, clean dataset commonly used for segmentation demos.
+
+| Property | Value |
+|----------|-------|
+| Rows | 200 |
+| Columns | 5 |
+| Missing values | 0 |
+| Duplicates | 0 |
 
 | Column | Type | Description |
 |--------|------|-------------|
 | `CustomerID` | integer | Unique customer identifier |
 | `Genre` | categorical | Gender (`Male` or `Female`) |
-| `Age` | integer | Customer age |
+| `Age` | integer | Customer age (18–70) |
 | `Annual Income (k$)` | integer | Annual income in thousands of dollars |
-| `Spending Score (1-100)` | integer | Score assigned by the mall based on customer behavior and spending nature |
+| `Spending Score (1-100)` | integer | Mall-assigned spending behavior score |
 
-The dataset has no missing values. The default clustering uses `Annual Income (k$)` and `Spending Score (1-100)`.
+The default clustering features are `Annual Income (k$)` and `Spending Score (1-100)`. `Genre` and `Age` are available for analytics and visualization but are not used as clustering inputs in the default configuration.
 
-## Results
+### Customer Personas
 
-The optimal number of clusters for this dataset is **k = 5**, selected by the highest silhouette score across `k = 2..10`.
+Personas are generated deterministically from cluster characteristics:
 
-| Cluster | Persona | Customers | Avg Income | Avg Spending | Top Genre |
-|---------|---------|-----------|------------|--------------|-----------|
-| 0 | Mainstream Shoppers | 81 | 55.3k | 49.5 | Female |
-| 1 | High-Value Customers | 39 | 86.5k | 82.1 | Female |
-| 2 | Budget-Conscious Spenders | 22 | 25.7k | 79.4 | Female |
-| 3 | Premium Savers | 35 | 88.2k | 17.1 | Male |
-| 4 | Low-Engagement Customers | 23 | 26.3k | 20.9 | Female |
+1. Cluster centers are inverse-transformed from the scaled feature space back to the original scale.
+2. Quartile breakpoints (25th and 75th percentiles) are computed from the full dataset's `Annual Income (k$)` and `Spending Score (1-100)`.
+3. Each cluster center is classified as low, mid, or high on income and spending using those breakpoints.
+4. A fixed mapping assigns one of five personas: High-Value Customers, Premium Savers, Budget-Conscious Spenders, Low-Engagement Customers, or Growth Opportunity Customers.
+5. Each persona includes a profile summary (count, percentage, averages, key characteristics) and a business strategy.
 
-Best silhouette score: **0.5547**.
+### Dashboard
 
-## Dashboard
+The Streamlit app (`app.py`) is organized into seven tabs:
 
-The Streamlit dashboard (`app.py`) is organized into seven tabs:
+1. **Executive Overview** — KPI cards for total customers, segments, average income, average spending, selected model, configuration, and silhouette score. Includes a headline business insight and a list of analytical insights.
 
-1. **Executive Overview** — KPI cards showing total customers, cluster count, average income, average spending score, selected algorithm, configuration, and silhouette score.
-2. **Customer Analytics** — interactive Plotly histograms of Age, Annual Income, and Spending Score distributions; a gender distribution pie chart; a feature correlation heatmap; and scatter plots of Income vs. Spending Score colored by gender or by cluster.
-3. **Clustering Lab** — choose an algorithm (K-Means, Agglomerative, DBSCAN, GMM), tune parameters, apply the configuration, and visualize the resulting clusters with centroids, cluster size bar chart, model metrics table, and cluster centers on the original scale. Includes a button to retrain and save the prediction model.
-4. **Model Comparison** — a predefined suite of candidate configurations is evaluated and displayed in a comparison table with a recommendation based on the composite metric ranking. Includes an interactive dual-axis line chart of K-Means inertia and silhouette score across `k = 2..10`, with the optimal `k` annotated.
-5. **Segment Explorer** — select a cluster/persona to view its name, description, segment size, percentage of the base, average income, average spending score, profile summary, key characteristics, and business recommendations (interpretation, opportunity, marketing strategy, retention/engagement).
-6. **New Customer Prediction** — enter Age, Gender, Annual Income, and Spending Score. The app maps the input to the nearest cluster centroid, assigns the corresponding persona, and displays tailored business recommendations. The model is loaded once via `joblib` and reused; form submission does not retrain.
-7. **Export** — download segmented customers CSV, segment summary CSV, model comparison CSV, and a cluster insights text report.
+2. **Customer Analytics** — interactive Plotly histograms of Age, Annual Income, and Spending Score distributions; a donut chart for gender composition; a correlation heatmap for the three numeric features; scatter plots of Income vs. Spending colored by gender or by segment; and a 3D scatter view of all numeric features.
 
-## Installation
+3. **Clustering Lab** — algorithm selector, parameter controls (k, linkage, eps, min_samples), Apply Configuration button, cluster scatter plot with centroids, per-segment size bar chart, model metrics table, segment centers on the original scale, and a Retrain & Save button for the prediction model. Includes an interpretation panel explaining the algorithm and reading the silhouette score.
+
+4. **Model Comparison** — a predefined suite of candidate configurations is evaluated and displayed in a comparison table with Silhouette, Calinski-Harabasz, Davies-Bouldin, and Inertia. Includes a recommended configuration based on the composite ranking. Also shows K-Means cluster stability (mean/min/max/std ARI across 10 runs) and a dual-axis elbow/silhouette chart for k = 2..10.
+
+5. **Segment Explorer** — persona overview cards sorted by size, a detail panel with profile summary and key characteristics, recommended action and strategy, business recommendations (interpretation, opportunity, marketing strategy, retention), segment-vs-overall standardized differences, and feature separation analysis (ANOVA F-ratios).
+
+6. **New Customer Prediction** — form to enter Age, Gender, Annual Income, and Spending Score. The app maps the input to the nearest cluster centroid, assigns the corresponding persona, and displays the persona description, strategy, and business recommendations. The model is loaded once via joblib and reused; form submission does not retrain.
+
+7. **Export** — download segmented customers CSV, segment summary CSV, model evaluation CSV, and a plain-text cluster insights report.
+
+### Model Prediction
+
+The inference pipeline is:
+
+1. A prediction bundle (preprocessor, scaled centers, original-scale centers, personas, algorithm, config, model version) is trained and persisted to `models/segmentation_model.joblib` using joblib.
+2. On app load, the bundle is loaded (or trained if missing / version-mismatched) and cached with `@st.cache_resource`.
+3. When a user submits the prediction form, the input row is transformed with the saved preprocessor.
+4. The Euclidean distance to each valid cluster center is computed.
+5. The nearest center's cluster ID is mapped to its persona.
+6. The persona name, description, strategy, and business recommendations are returned to the UI.
+
+### Export
+
+Four downloadable artefacts are available in the Export tab:
+
+- **customer_segmentation_results.csv** — every customer with their assigned segment for the active configuration.
+- **segment_summary.csv** — one row per segment with size, percentage, profile summary, key characteristics, and recommended strategy.
+- **model_evaluation.csv** — metric scores (Silhouette, Calinski-Harabasz, Davies-Bouldin, Inertia) for every candidate algorithm and configuration.
+- **cluster_insights_report.txt** — plain-text narrative of every segment, its size, characteristics, and business strategy.
+
+### Sample Visualizations
+
+Example exploratory visualizations of the customer dataset (static; the live dashboard renders interactive Plotly charts):
+
+| Cluster segmentation | Income / spending correlation |
+|---|---|
+| ![Cluster segmentation](assets/cluster_segmentation.png) | ![Correlation heatmap](assets/correlation_heatmap.png) |
+
+| Feature distributions (pair plot) | Annual income distribution |
+|---|---|
+| ![Pair plot](assets/pair_plot.png) | ![Annual income](assets/annual_income_k_distribution.png) |
+
+### Testing
+
+```bash
+python -m pytest
+```
+
+Current result: **199 passed, 6 warnings** in ~9s. Coverage is reported via pytest-cov.
+
+### Installation
 
 ```bash
 git clone https://github.com/ARJUN-0402/Intelligent-Customer-Segmentation.git
@@ -119,96 +188,81 @@ cd Intelligent-Customer-Segmentation
 pip install -r requirements.txt
 ```
 
-## Usage
+### Usage
 
 ```bash
-python -m streamlit run app.py
+streamlit run app.py
 ```
 
 The app opens at `http://localhost:8501`.
 
-## Testing
-
-```bash
-pytest
-```
-
-## Project Structure
+### Project Structure
 
 ```text
 Intelligent-Customer-Segmentation/
-├── app.py                        # Streamlit dashboard
-├── requirements.txt              # Python dependencies
-├── README.md                     # This file
-├── LICENSE                       # MIT License
+├── app.py
+├── requirements.txt
+├── README.md
+├── LICENSE
 ├── .gitignore
-│
 ├── data/
-│   └── Mall_Customers.csv        # Source dataset (200 rows x 5 columns)
-│
+│   └── Mall_Customers.csv
 ├── src/
 │   ├── __init__.py
-│   ├── utils.py                  # Constants, portable paths, helpers
-│   ├── data_loader.py            # Dataset loading + validation
-│   ├── preprocessing.py          # Cleaning, encoding, scaling pipeline
-│   ├── clustering.py             # K-Means, Agglomerative, DBSCAN, GMM
-│   ├── evaluation.py             # Multi-metric comparison + model selection
-│   ├── personas.py               # Cluster-to-persona mapping + profiles
-│   └── business_insights.py      # Business insight generation + reports
-│
+│   ├── utils.py
+│   ├── data_loader.py
+│   ├── preprocessing.py
+│   ├── clustering.py
+│   ├── evaluation.py
+│   ├── personas.py
+│   ├── business_insights.py
+│   └── analytics.py
 ├── tests/
-│   ├── conftest.py               # Shared pytest fixtures
+│   ├── conftest.py
 │   ├── test_data_loader.py
 │   ├── test_preprocessing.py
 │   ├── test_clustering.py
 │   ├── test_evaluation.py
 │   ├── test_personas.py
 │   ├── test_business_insights.py
-│   └── test_prediction.py
-│
+│   ├── test_prediction.py
+│   └── test_analytics.py
 ├── models/
-│   └── segmentation_model.joblib # Serialized prediction model
-│
+│   └── segmentation_model.joblib
 ├── outputs/
 │   ├── customers_clustered.csv
 │   ├── cluster_profiles.csv
 │   ├── evaluation_results.csv
 │   ├── segmentation_report.txt
 │   └── figures/
-│       ├── elbow_method.png
-│       ├── customer_clusters.png
-│       └── silhouette_scores.png
-│
-├── assets/                       # Historical analysis images and archive
-└── docs/                         # Documentation and audit reports
+└── docs/
+    ├── PROJECT_AUDIT.md
+    ├── README_AUDIT.md
+    └── CURRENT_STATE.md
 ```
 
-## Deployment
+### Limitations
 
-This project is compatible with **Streamlit Community Cloud**, **Streamlit in Enterprise**, or any environment that can run Python and expose port 8501.
+* The dataset is relatively small (200 customers) and low-dimensional (2 primary features for clustering). Results may not generalize to larger or more complex retail datasets.
+* Clustering quality depends heavily on the chosen features. The default pipeline uses only Income and Spending Score; adding Age, Gender, or RFM-style features could change segment structures.
+* Segmentation is descriptive, not causal. The personas and recommendations reflect correlations in the data, not proven causal effects.
+* Business recommendations are analytical suggestions based on cluster statistics, not validated marketing plans.
+* DBSCAN performance is sensitive to `eps` and `min_samples` and may produce no valid clusters with default settings on this dataset.
+* Model selection uses a dataset-specific composite score, which does not guarantee optimality on unseen data.
+* The prediction model assigns customers by nearest centroid distance, which assumes spherical, equally sized clusters (a K-Means assumption).
 
-To deploy on Streamlit Community Cloud:
+### Future Improvements
 
-1. Push this repository to GitHub.
-2. Connect the repo at [share.streamlit.io](https://share.streamlit.io).
-3. Set the main file to `app.py` and the Python version to `3.9+` (or your preferred supported version).
-4. Deploy. Streamlit installs dependencies from `requirements.txt` automatically.
+The following are not currently implemented:
 
-## Future Improvements
-
-The following ideas are not currently implemented and are listed as potential extensions:
-
-- **RFM segmentation** — incorporate Recency, Frequency, and Monetary features for transactional datasets.
-- **CLV prediction** — predict customer lifetime value using regression or survival models.
-- **Churn prediction** — classify customers as likely to churn using supervised learning.
-- **Recommendation systems** — suggest products or offers based on segment affinity and collaborative filtering.
-- **Campaign response prediction** — estimate the probability a customer will respond to a specific campaign.
-- **Database integration** — connect to a live database (PostgreSQL, MySQL, etc.) for real-time segmentation and automated refresh.
-- **Dimensionality reduction** — add PCA or t-SNE visualizations for high-dimensional feature spaces.
-- **Hyperparameter optimization** — integrate Optuna or scikit-learn's `GridSearchCV` for automated tuning.
-- **A/B testing framework** — compare segment-level campaign performance with statistical significance testing.
-- **API layer** — expose segmentation and prediction endpoints via FastAPI or Flask for downstream system integration.
-
-## License
-
-MIT — see `LICENSE` for details.
+* RFM (Recency, Frequency, Monetary) segmentation for transactional datasets
+* Customer Lifetime Value (CLV) prediction
+* Churn prediction using supervised learning
+* Product recommendation systems based on segment affinity
+* Campaign response prediction
+* Database integration for live data refresh
+* Dimensionality reduction (PCA / t-SNE) for high-dimensional visualizations
+* Hyperparameter optimization (Optuna or GridSearchCV)
+* A/B testing framework for segment-level campaign comparison
+* API layer (FastAPI / Flask) for downstream system integration
+* Docker containerization and CI/CD pipeline

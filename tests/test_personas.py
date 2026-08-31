@@ -8,8 +8,6 @@ import pytest
 
 from src.personas import (
     PERSONA_CATALOG,
-    Persona,
-    PersonaProfile,
     assign_personas,
     assign_personas_from_data,
     build_persona_profiles,

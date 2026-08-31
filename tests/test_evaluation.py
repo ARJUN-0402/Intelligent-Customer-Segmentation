@@ -6,59 +6,62 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.clustering import ClusterResult, run_kmeans, run_dbscan
+from src.clustering import (
+    ClusterResult,
+    KOptimizationResult,
+    evaluate_k_range,
+    run_dbscan,
+    run_kmeans,
+)
 from src.evaluation import (
     ComparisonTable,
     MetricResult,
     ModelEvaluationResult,
     compare_models,
-    compute_elbow_curve,
-    compute_silhouette_scores,
     evaluate_model,
-    find_optimal_k,
     run_full_evaluation,
-    select_best_clustering_model,
     save_evaluation_results,
+    select_best_clustering_model,
 )
 from src.utils import MAX_K, MIN_K
 
 
 # ---------------------------------------------------------------------------
-# Legacy Phase 3 tests
+# evaluate_k_range (replaces legacy deprecated helpers)
 # ---------------------------------------------------------------------------
-class TestLegacyEvaluation:
-    def test_compute_elbow_curve(self, X_scaled):
+class TestEvaluateKRange:
+    def test_returns_result_type(self, X_scaled):
         X, _ = X_scaled
-        result = compute_elbow_curve(X)
-        assert len(result.k_values) == len(result.inertias)
+        result = evaluate_k_range(X)
+        assert isinstance(result, KOptimizationResult)
+
+    def test_k_values_range_and_inertias_positive(self, X_scaled):
+        X, _ = X_scaled
+        result = evaluate_k_range(X)
         assert result.k_values[0] == MIN_K
         assert result.k_values[-1] == MAX_K
+        assert result.k_values == list(range(MIN_K, MAX_K + 1))
         assert all(i > 0 for i in result.inertias)
 
-    def test_compute_silhouette_scores(self, X_scaled):
+    def test_silhouette_scores_and_optimal_k_in_range(self, X_scaled):
         X, _ = X_scaled
-        result = compute_silhouette_scores(X)
-        assert len(result.scores) == len(result.k_values)
+        result = evaluate_k_range(X)
+        assert len(result.silhouette_scores) == len(result.k_values)
         assert MIN_K <= result.optimal_k <= MAX_K
-        best = max(result.scores)
-        assert result.scores[result.k_values.index(result.optimal_k)] == pytest.approx(best)
-
-    def test_find_optimal_k_returns_highest_silhouette(self, X_scaled):
-        X, _ = X_scaled
-        sil = compute_silhouette_scores(X)
-        k = find_optimal_k(sil)
-        assert k == sil.optimal_k
-
-    def test_find_optimal_k_empty_raises(self):
-        with pytest.raises(ValueError, match="SilhouetteResult contains no scores"):
-            find_optimal_k(
-                type("SilhouetteResult", (), {"scores": [], "k_values": []})()
-            )
+        best = max(result.silhouette_scores)
+        assert result.silhouette_scores[
+            result.k_values.index(result.optimal_k)
+        ] == pytest.approx(best)
 
     def test_optimal_k_is_five_for_mall_dataset(self, X_scaled):
         X, _ = X_scaled
-        sil = compute_silhouette_scores(X)
-        assert sil.optimal_k == 5
+        result = evaluate_k_range(X)
+        assert result.optimal_k == 5
+
+    def test_invalid_k_min_raises(self, X_scaled):
+        X, _ = X_scaled
+        with pytest.raises(ValueError, match="k_min must be >= 2"):
+            evaluate_k_range(X, k_min=1)
 
 
 # ---------------------------------------------------------------------------
@@ -248,8 +251,6 @@ class TestRunFullEvaluation:
         assert table.recommendation is not None
 
     def test_saves_results(self, X_scaled, tmp_path):
-        from src.evaluation import save_evaluation_results
-
         X, _ = X_scaled
         table = run_full_evaluation(X)
         out = save_evaluation_results(table, path=tmp_path / "eval.csv")

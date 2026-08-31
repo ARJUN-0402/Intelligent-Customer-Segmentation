@@ -27,7 +27,7 @@ An interactive **seven-tab Streamlit dashboard** (`app.py`) is included and runs
 - **Analytical depth** — segment-vs-overall comparison (Cohen's d), ANOVA feature separation, and K-Means stability (ARI).
 - **Prediction** — assign a new customer to the nearest centroid and return persona + strategy, with no retraining.
 - **Export** — CSV and TXT artefacts for segmented customers, summaries, evaluation, and insights.
-- **Tests** — 199 automated pytest cases across the full pipeline.
+- **Tests** — 218 automated pytest cases across the full pipeline.
 
 ### Architecture
 
@@ -178,7 +178,7 @@ Example exploratory visualizations of the customer dataset (static; the live das
 python -m pytest
 ```
 
-Current result: **199 passed, 6 warnings** in ~9s. Coverage is reported via pytest-cov.
+Current result: **218 passed, 0 warnings** in ~7s. Coverage is reported via pytest-cov.
 
 ### Installation
 
@@ -216,7 +216,13 @@ Intelligent-Customer-Segmentation/
 │   ├── evaluation.py
 │   ├── personas.py
 │   ├── business_insights.py
-│   └── analytics.py
+│   ├── analytics.py
+│   └── ui/
+│       ├── __init__.py
+│       ├── cards.py
+│       ├── charts.py
+│       ├── components.py
+│       └── styles.py
 ├── tests/
 │   ├── conftest.py
 │   ├── test_data_loader.py
@@ -226,7 +232,8 @@ Intelligent-Customer-Segmentation/
 │   ├── test_personas.py
 │   ├── test_business_insights.py
 │   ├── test_prediction.py
-│   └── test_analytics.py
+│   ├── test_analytics.py
+│   └── test_model_lifecycle.py
 ├── models/
 │   └── segmentation_model.joblib
 ├── outputs/

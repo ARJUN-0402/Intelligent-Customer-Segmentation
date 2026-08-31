@@ -3,7 +3,7 @@
 **Date:** 2026-08-31
 **Repository:** Intelligent-Customer-Segmentation
 **Branch:** `main`
-**Latest commit:** `fc0450b` — "refactor: restructure project into modular src package with comprehensive test suite and updated documentation"
+**Latest commit:** `2bd8a85` — "fix: harden Streamlit deployment and model lifecycle"
 **Working tree:** clean (no uncommitted changes)
 
 ---
@@ -18,7 +18,7 @@ Intelligent-Customer-Segmentation/
 ├── requirements.txt              # 9 Python dependencies
 ├── README.md                     # Project documentation
 ├── LICENSE                       # MIT
-├── .gitignore                    # Ignores outputs/, models/, __pycache__/
+├── .gitignore                    # Ignores caches, outputs, env files, and generated ML artifacts (preserves committed model)
 ├── data/
 │   └── Mall_Customers.csv        # Source dataset (200 x 5)
 ├── src/
@@ -29,16 +29,25 @@ Intelligent-Customer-Segmentation/
 │   ├── clustering.py             # K-Means, Agglomerative, DBSCAN, GMM + elbow
 │   ├── evaluation.py             # Multi-metric comparison + model selection
 │   ├── personas.py               # Cluster-to-persona mapping (5 personas)
-│   └── business_insights.py      # Business insight generation + reports
+│   ├── business_insights.py      # Business insight generation + reports
+│   ├── analytics.py              # Segment analytics (Cohen's d, ANOVA, stability)
+│   └── ui/
+│       ├── __init__.py           # UI presentation components (cards, charts)
+│       ├── cards.py
+│       ├── charts.py
+│       ├── components.py
+│       └── styles.py
 ├── tests/
 │   ├── conftest.py               # Shared fixtures (data_path, df, X_scaled)
-│   ├── test_data_loader.py       # 10 tests
+│   ├── test_data_loader.py       # 12 tests
 │   ├── test_preprocessing.py     # 7 tests
-│   ├── test_clustering.py        # 32 tests
-│   ├── test_evaluation.py        # 24 tests
-│   ├── test_personas.py          # 22 tests
-│   ├── test_business_insights.py # 30 tests
-│   └── test_prediction.py        # 10 tests
+│   ├── test_clustering.py        # 43 tests
+│   ├── test_evaluation.py        # 25 tests
+│   ├── test_personas.py          # 26 tests
+│   ├── test_business_insights.py # 20 tests
+│   ├── test_prediction.py        # 10 tests
+│   ├── test_analytics.py         # 56 tests
+│   └── test_model_lifecycle.py   # 19 tests
 ├── models/
 │   └── segmentation_model.joblib # Serialized prediction bundle (k=5, kmeans)
 ├── outputs/
@@ -52,7 +61,7 @@ Intelligent-Customer-Segmentation/
 │       └── silhouette_scores.png
 ├── assets/                       # Historical images (pre-refactor) + tar.gz archive
 ├── docs/
-│   ├── PROJECT_AUDIT.md          # STALE - describes old flat structure
+│   ├── PROJECT_AUDIT.md          # Audit report (modular architecture)
 │   ├── README_AUDIT.md           # README verification (this audit)
 │   └── CURRENT_STATE.md          # This file
 └── notebooks/                    # Empty (.gitkeep only)
@@ -169,7 +178,7 @@ Seven Streamlit tabs, all backed by cached data/functions:
 | New-customer prediction | IMPLEMENTED | `app.py:281` (`predict_new`) |
 | CSV export | IMPLEMENTED | `app.py:865` (`section_export`) |
 | Model persistence | IMPLEMENTED | `app.py:264` (joblib) |
-| Automated tests | IMPLEMENTED | 143 tests, all passing |
+| Automated tests | IMPLEMENTED | 218 tests, all passing |
 | Logging | IMPLEMENTED | `src/utils.py:68` + all modules |
 | Caching | IMPLEMENTED | `@st.cache_resource` + session_state |
 | Deployment configuration | PARTIAL | README mentions Streamlit Cloud; no Dockerfile/Procfile |
@@ -200,7 +209,7 @@ Features NOT present in the codebase (all listed in README "Future Improvements"
 
 ## 7. Broken Features
 
-**None.** All 143 tests pass. `python -m compileall` produces no errors. The Streamlit app, prediction pipeline, and all ML modules execute without runtime errors.
+**None.** All 218 tests pass. `python -m compileall` produces no errors. The Streamlit app, prediction pipeline, and all ML modules execute without runtime errors.
 
 All previously identified documentation drift issues have been resolved:
 - `docs/PROJECT_AUDIT.md` replaced with current-state audit
@@ -227,7 +236,7 @@ All previously identified documentation issues have been resolved:
 **`requirements.txt` contents:**
 ```
 pandas>=2.0, numpy>=1.24, scikit-learn>=1.3, matplotlib>=3.7,
-streamlit>=1.30, plotly>=5.18, joblib>=1.3, pytest>=7.4, pytest-cov>=4.1
+streamlit>=1.30, plotly>=5.18, joblib>=1.6.0, pytest>=7.4, pytest-cov>=4.1
 ```
 
 | Check | Result |
@@ -245,7 +254,7 @@ streamlit>=1.30, plotly>=5.18, joblib>=1.3, pytest>=7.4, pytest-cov>=4.1
 | Test | Result |
 |------|--------|
 | `python -m compileall .` | PASS — no syntax errors |
-| `pytest` | PASS — **143 passed** in 28.98s |
+| `pytest` | PASS — **218 passed** in ~7s |
 | Dataset loads | PASS — 200 rows x 5 cols |
 | Model artifact loads | PASS — valid joblib bundle with 5 personas |
 | `app.py` imports resolve | PASS (compileall + pytest import `app.predict_new`) |

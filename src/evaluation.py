@@ -461,13 +461,7 @@ def run_full_evaluation(
     ComparisonTable
         Structured results for downstream consumption.
     """
-    from src.clustering import (
-        run_agglomerative,
-        run_clustering,
-        run_dbscan,
-        run_gmm,
-        run_kmeans,
-    )
+    from src.clustering import run_clustering
 
     if algorithms is None:
         algorithms = {

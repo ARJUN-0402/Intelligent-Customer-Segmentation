@@ -3,7 +3,7 @@
 **Date:** 2026-08-31
 **Repository:** Intelligent-Customer-Segmentation
 **Branch:** `main`
-**Latest commit:** `fc0450b`
+**Latest commit:** `2bd8a85`
 **Phase:** 1 — Post-Implementation Audit & Cleanup
 
 ---
@@ -29,17 +29,26 @@ Intelligent-Customer-Segmentation/
 │   ├── clustering.py             # K-Means, Agglomerative, DBSCAN, GMM + elbow
 │   ├── evaluation.py             # Multi-metric comparison + model selection
 │   ├── personas.py               # Cluster-to-persona mapping (5 personas)
-│   └── business_insights.py      # Business insight generation + reports
+│   ├── business_insights.py      # Business insight generation + reports
+│   ├── analytics.py              # Segment analytics (Cohen's d, ANOVA, stability)
+│   └── ui/
+│       ├── __init__.py           # UI presentation components (cards, charts)
+│       ├── cards.py
+│       ├── charts.py
+│       ├── components.py
+│       └── styles.py
 │
 ├── tests/
 │   ├── conftest.py               # Shared pytest fixtures
-│   ├── test_data_loader.py       # 10 tests
+│   ├── test_data_loader.py       # 12 tests
 │   ├── test_preprocessing.py     # 7 tests
-│   ├── test_clustering.py        # 32 tests
-│   ├── test_evaluation.py        # 24 tests
-│   ├── test_personas.py          # 22 tests
-│   ├── test_business_insights.py # 30 tests
-│   └── test_prediction.py        # 10 tests
+│   ├── test_clustering.py        # 43 tests
+│   ├── test_evaluation.py        # 25 tests
+│   ├── test_personas.py          # 26 tests
+│   ├── test_business_insights.py # 20 tests
+│   ├── test_prediction.py        # 10 tests
+│   ├── test_analytics.py         # 56 tests
+│   └── test_model_lifecycle.py   # 19 tests
 │
 ├── models/
 │   └── segmentation_model.joblib # Serialized prediction bundle (k=5, kmeans)
@@ -184,7 +193,7 @@ Seven Streamlit tabs, all backed by cached data/functions:
 | New-customer prediction | IMPLEMENTED | `app.py` |
 | CSV export | IMPLEMENTED | `app.py` |
 | Model persistence (joblib) | IMPLEMENTED | `app.py` |
-| Automated tests (143) | IMPLEMENTED | `tests/` |
+| Automated tests (218) | IMPLEMENTED | `tests/` — 9 test files, 218 cases |
 
 ---
 
@@ -221,16 +230,18 @@ Personas are assigned using income/spending quartile breakpoints derived from th
 
 | Test File | Tests |
 |-----------|-------|
-| `test_data_loader.py` | 10 |
+| `test_data_loader.py` | 12 |
 | `test_preprocessing.py` | 7 |
-| `test_clustering.py` | 32 |
-| `test_evaluation.py` | 24 |
-| `test_personas.py` | 22 |
-| `test_business_insights.py` | 30 |
+| `test_clustering.py` | 43 |
+| `test_evaluation.py` | 25 |
+| `test_personas.py` | 26 |
+| `test_business_insights.py` | 20 |
 | `test_prediction.py` | 10 |
-| **Total** | **143** |
+| `test_analytics.py` | 56 |
+| `test_model_lifecycle.py` | 19 |
+| **Total** | **218** |
 
-All 143 tests pass. `python -m compileall .` produces no errors.
+All 218 tests pass. `python -m compileall .` produces no errors.
 
 ---
 
@@ -239,7 +250,7 @@ All 143 tests pass. `python -m compileall .` produces no errors.
 | Test | Result |
 |------|--------|
 | `python -m compileall .` | PASS — no syntax errors |
-| `pytest` | PASS — 143 passed |
+| `pytest` | PASS — 218 passed |
 | Dataset loads | PASS — 200 rows x 5 cols |
 | Model artifact loads | PASS — valid joblib bundle with 5 personas |
 | `app.py` imports resolve | PASS |

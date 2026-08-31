@@ -209,8 +209,6 @@ class TestCompareSegmentsVsOverall:
         result = compare_segments_vs_overall(df, labels)
         cluster0 = next(c for c in result if c.cluster_id == 0)
         cluster1 = next(c for c in result if c.cluster_id == 1)
-        overall_income = df[ANNUAL_INCOME].mean()
-        overall_spending = df[SPENDING_SCORE].mean()
         # Cluster 0 (6 of 8) should be below average on both
         assert cluster0.feature_deltas[ANNUAL_INCOME] < 0  # below avg
         assert cluster1.feature_deltas[ANNUAL_INCOME] > 0  # above avg

@@ -13,9 +13,6 @@ These tests guard the deployment hardening contract:
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
 import joblib
 import numpy as np
 import pandas as pd
@@ -34,7 +31,7 @@ from src.utils import (
     PROJECT_ROOT,
 )
 
-from app import _validate_bundle, predict_new, train_bundle
+from app import _validate_bundle, predict_new
 from src.clustering import run_kmeans
 from src.personas import assign_personas_from_data
 

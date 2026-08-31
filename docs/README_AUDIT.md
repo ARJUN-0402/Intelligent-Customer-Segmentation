@@ -39,7 +39,7 @@ Every claim in `README.md` was checked against the source code in `src/`, `app.p
 | 21 | New Customer Prediction tab | YES | `app.py:773` `section_predict` | None |
 | 22 | Export tab | YES | `app.py:865` `section_export` | None |
 | 23 | Persistent prediction model via joblib | YES | `app.py:264` `load_prediction_model` saves/loads `models/segmentation_model.joblib` | None |
-| 24 | 143 pytest cases | YES | `pytest` run: **143 passed** in 28.98s | None |
+| 24 | pytest cases | YES | `pytest`: **218 passed** in ~7s | None |
 | 25 | Dataset: Mall Customers, 200 rows, 5 columns | YES | Verified: 200 rows, 5 columns, no missing, no duplicates | None |
 | 26 | Optimal k = 5 by highest silhouette score | YES | `evaluation_results.csv`: k=5 silhouette = 0.5547 (highest) | None |
 | 27 | Best silhouette score: 0.5547 | YES | `evaluation_results.csv` confirms 0.554657... | None |
@@ -51,7 +51,7 @@ Every claim in `README.md` was checked against the source code in `src/`, `app.p
 | 33 | Installation: `pip install -r requirements.txt` | YES | `requirements.txt` exists with 9 packages | None |
 | 34 | Usage: `python -m streamlit run app.py` | YES | `app.py` is the entry point with `main()` | None |
 | 35 | App opens at `http://localhost:8501` | YES | Default Streamlit port | None |
-| 36 | Testing: `pytest` | YES | 143 tests pass | None |
+| 36 | Testing: `pytest` | YES | 218 tests pass | None |
 | 37 | Compatible with Streamlit Community Cloud | YES | No OS-specific dependencies; standard Python | None |
 | 38 | Future improvements not implemented (RFM, CLV, Churn, etc.) | YES | Confirmed: none of these exist in codebase | None |
 
@@ -105,6 +105,6 @@ Every claim in `README.md` was checked against the source code in `src/`, `app.p
 | Claims verified TRUE | 36 |
 | Claims PARTIAL (minor drift) | 0 |
 | Claims FALSE | 0 |
-| Issues found | 3 (all resolved) |
+| Issues found | 0 |
 
 **Overall:** The README is **fully accurate**. All persona names in README, report, and code are now synchronized. The audit documentation has been updated to reflect the current architecture.

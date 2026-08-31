@@ -97,7 +97,7 @@ class TestGenerateClusterInsights:
             f"{SPENDING_SCORE}_mean": [40.0],
             "top_genre": ["Female"],
         }, index=[0])
-        from src.personas import Persona, PERSONA_CATALOG
+        from src.personas import PERSONA_CATALOG
         personas = {0: PERSONA_CATALOG["mainstream"]}
         insights = generate_cluster_insights(profiles, personas)
         assert isinstance(insights, list)
@@ -222,7 +222,7 @@ class TestGenerateReport:
             f"{SPENDING_SCORE}_mean": [40.0],
             "top_genre": ["Female"],
         }, index=[0])
-        from src.personas import Persona, PERSONA_CATALOG
+        from src.personas import PERSONA_CATALOG
         personas = {0: PERSONA_CATALOG["mainstream"]}
         report = generate_report(profiles, personas, optimal_k=5)
         assert isinstance(report, str)

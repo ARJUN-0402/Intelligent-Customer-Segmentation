@@ -10,21 +10,27 @@ from typing import Optional
 
 import streamlit as st
 
-from .styles import (
-    BORDER, CARD_RADIUS, CARD_SHADOW, ERROR, INK, MUTED, PRIMARY,
-    SURFACE, SUCCESS, TEXT_CAPTION, TEXT_BODY,
-)
+from .styles import ERROR, PRIMARY, SUCCESS
+
+
+def _esc(text: str) -> str:
+    """Minimal HTML-escape for user-provided strings."""
+    return (
+        str(text)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
 
 
 # ---------------------------------------------------------------------------
 # Headers
 # ---------------------------------------------------------------------------
+
 def section_header(title: str, caption: str = "") -> None:
     """Render a consistent section title with an optional supporting caption."""
-    st.markdown(
-        f"<h2 style='color:{INK};margin-bottom:2px;'>{title}</h2>",
-        unsafe_allow_html=True,
-    )
+    st.markdown(f"<h2>{_esc(title)}</h2>", unsafe_allow_html=True)
     if caption:
         st.caption(caption)
 
@@ -37,33 +43,23 @@ def app_header(
     n_customers: int,
     active_label: str = "",
 ) -> None:
-    """Render a compact, premium top header.
-
-    Communicates the product name, tagline, and the currently active model /
-    segment / customer summary in a single condensed bar.
-    """
+    """Render a compact, premium top header."""
+    cfg_block = (
+        f'<span>Configuration: <b>{_esc(active_label)}</b></span>'
+        if active_label else ""
+    )
     st.markdown(
         f"""
-        <div style="display:flex;justify-content:space-between;
-            align-items:center;flex-wrap:wrap;margin-bottom:0.5rem;">
-            <div>
-                <div style="font-size:0.75rem;font-weight:700;
-                    color:{MUTED};text-transform:uppercase;
-                    letter-spacing:0.08em;">{app_name}</div>
-                <div style="font-size:1rem;font-weight:600;color:{INK};">
-                    {tagline}</div>
+        <div class="app-header">
+            <div class="app-header-brand">
+                <div class="app-header-appname">{_esc(app_name)}</div>
+                <div class="app-header-tagline">{_esc(tagline)}</div>
             </div>
-            <div style="display:flex;gap:14px;flex-wrap:wrap;">
-                <span style="font-size:{TEXT_CAPTION};color:{MUTED};">
-                    Model: <b style="color:{INK}">{algorithm}</b>
-                </span>
-                <span style="font-size:{TEXT_CAPTION};color:{MUTED};">
-                    Segments: <b style="color:{INK}">{n_segments}</b>
-                </span>
-                <span style="font-size:{TEXT_CAPTION};color:{MUTED};">
-                    Customers: <b style="color:{INK}">{n_customers}</b>
-                </span>
-                {f'<span style="font-size:{TEXT_CAPTION};color:{MUTED}">Configuration: <b style="color:{INK}">{active_label}</b></span>' if active_label else ""}
+            <div class="app-header-meta">
+                <span>Model: <b>{_esc(algorithm)}</b></span>
+                <span>Segments: <b>{n_segments}</b></span>
+                <span>Customers: <b>{n_customers:,}</b></span>
+                {cfg_block}
             </div>
         </div>
         """,
@@ -74,6 +70,7 @@ def app_header(
 # ---------------------------------------------------------------------------
 # Sidebar building blocks
 # ---------------------------------------------------------------------------
+
 def sidebar_nav(
     options: list[str],
     labels: list[str],
@@ -99,15 +96,14 @@ def dataset_status(raw_rows: int, raw_cols: int, ok: bool, version: str = "") ->
     dot = SUCCESS if ok else ERROR
     st.sidebar.markdown(
         f"""
-        <div style="font-size:{TEXT_CAPTION};color:{MUTED};margin-top:8px;">
-            <span style="display:inline-block;width:8px;height:8px;
-                border-radius:50%;background:{dot};margin-right:6px;"></span>
-            Dataset
+        <div class="sidebar-section">
+            <div class="sidebar-section-title">
+                <span class="status-dot" style="background:{dot};"></span>
+                Dataset
+            </div>
+            <div class="dataset-meta">{raw_rows:,} customers · {raw_cols} attributes</div>
+            <div class="dataset-status">{status}{' · ' + _esc(version) if version else ''}</div>
         </div>
-        <div style="font-size:{TEXT_BODY};font-weight:600;color:{INK};
-            margin-left:16px;">{raw_rows} customers · {raw_cols} attributes</div>
-        <div style="font-size:{TEXT_CAPTION};color:{MUTED};margin-left:16px;
-            margin-top:2px;">{status}{' · ' + version if version else ''}</div>
         """,
         unsafe_allow_html=True,
     )
@@ -117,11 +113,8 @@ def status_dot(label: str, ok: bool = True, color: Optional[str] = None) -> None
     """Render a small coloured status dot with a label."""
     bg = color or (SUCCESS if ok else ERROR)
     st.markdown(
-        f"""<span style="display:inline-flex;align-items:center;gap:6px;
-            font-size:{TEXT_CAPTION};color:{MUTED}">
-            <span style="width:10px;height:10px;border-radius:50%;
-                background:{bg};display:inline-block;"></span>
-            {label}</span>""",
+        f"""<span class="status-dot" style="background:{bg};"></span>
+           <span class="status-label">{_esc(label)}</span>""",
         unsafe_allow_html=True,
     )
 
@@ -129,6 +122,7 @@ def status_dot(label: str, ok: bool = True, color: Optional[str] = None) -> None
 # ---------------------------------------------------------------------------
 # Recommendation / information surfaces
 # ---------------------------------------------------------------------------
+
 def recommendation_box(
     title: str,
     body: str,
@@ -139,20 +133,14 @@ def recommendation_box(
     item_html = ""
     if items:
         bullets = "".join(
-            f'<li style="margin-bottom:4px;font-size:{TEXT_BODY};'
-            f'color:{INK};">{it}</li>' for it in items
+            f'<li class="recommendation-item">{_esc(it)}</li>' for it in items
         )
-        item_html = f'<ul style="margin:8px 0 0 18px;padding:0;">{bullets}</ul>'
+        item_html = f'<ul class="recommendation-list">{bullets}</ul>'
     st.markdown(
         f"""
-        <div style="background:{SURFACE};border:1px solid {BORDER};
-            border-left:4px solid {accent};border-radius:{CARD_RADIUS};
-            padding:16px 18px;box-shadow:{CARD_SHADOW};margin:12px 0;">
-            <div style="font-size:{TEXT_CAPTION};font-weight:700;
-                color:{accent};text-transform:uppercase;
-                letter-spacing:0.05em;">{title}</div>
-            <div style="font-size:{TEXT_BODY};color:{INK};
-                line-height:1.5;margin-top:8px;">{body}</div>
+        <div class="recommendation-box" style="--accent:{accent};">
+            <div class="recommendation-title">{_esc(title)}</div>
+            <div class="recommendation-body">{_esc(body)}</div>
             {item_html}
         </div>
         """,
@@ -161,11 +149,7 @@ def recommendation_box(
 
 
 def info_box(text: str, kind: str = "info") -> None:
-    """A soft, themed information callout.
-
-    ``kind`` is one of ``"info"`` (blue), ``"success"`` (green), ``"warning"``
-    (orange). Uses Streamlit-native styling for consistency.
-    """
+    """A soft, themed information callout."""
     if kind == "success":
         st.success(text)
     elif kind == "warning":
@@ -177,6 +161,7 @@ def info_box(text: str, kind: str = "info") -> None:
 # ---------------------------------------------------------------------------
 # Empty / error / loading states
 # ---------------------------------------------------------------------------
+
 def error_state(message: str, detail: str = "") -> None:
     """Show a clean error without exposing tracebacks."""
     st.error(message)
@@ -189,26 +174,15 @@ def empty_state(
     hint: str = "",
     action: Optional[tuple[str, str]] = None,
 ) -> None:
-    """Render a centred empty state with optional action button.
-
-    Parameters
-    ----------
-    message:
-        Short explanation of why the view is empty.
-    hint:
-        Optional secondary line.
-    action:
-        Optional ``(label, emoji)`` tuple for a contextual call-to-action.
-    """
+    """Render a centred empty state with optional action button."""
     cols = st.columns([1, 2, 1])
     with cols[1]:
         st.markdown(
             f"""
-            <div style="text-align:center;padding:24px 0;color:{MUTED};
-                font-size:{TEXT_BODY};">
-                <div style="font-size:1.5rem;margin-bottom:8px;">○</div>
-                <div>{message}</div>
-                {f'<div style="margin-top:6px;font-size:{TEXT_CAPTION};">{hint}</div>' if hint else ''}
+            <div class="empty-state">
+                <div class="empty-state-icon">○</div>
+                <div class="empty-state-message">{_esc(message)}</div>
+                {f'<div class="empty-state-hint">{_esc(hint)}</div>' if hint else ''}
             </div>
             """,
             unsafe_allow_html=True,

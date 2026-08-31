@@ -42,8 +42,8 @@ from src.personas import assign_personas_from_data, build_persona_profiles
 from src.preprocessing import CustomerDataPreprocessor
 from src.ui import cards, charts, components, styles
 from src.ui.styles import (
-    AMBER, ERROR, INK, MUTED, PRIMARY, SURFACE, SUCCESS, TEAL,
-    WARNING, PURPLE, BORDER, TEXT_BODY,
+    AMBER, ERROR, PRIMARY, SUCCESS, TEAL,
+    WARNING, PURPLE,
     PERSONA_COLORS,
     PALETTE,
 )
@@ -69,6 +69,16 @@ from src.utils import (
 )
 
 logger = setup_logging()
+
+
+def _esc(text: str) -> str:
+    return (
+        str(text)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -780,14 +790,9 @@ def section_overview(base: dict[str, Any], active: dict[str, Any]) -> None:
     # ---- Hero + headline ----
     st.markdown(
         f"""
-        <div style="background:{SURFACE};border:1px solid {styles.BORDER};
-            border-left:4px solid {PRIMARY};border-radius:{styles.CARD_RADIUS};
-            padding:18px 20px;margin-bottom:1.25rem;">
-            <div style="font-size:0.8rem;font-weight:700;color:{styles.MUTED};
-                text-transform:uppercase;letter-spacing:0.05em;">
-                Most important business insight</div>
-            <div style="font-size:0.95rem;color:{INK};margin-top:8px;
-                line-height:1.5;">{derive_headline(active)[0]}</div>
+        <div class="hero-box">
+            <div class="hero-box-tag">Most important business insight</div>
+            <div class="hero-box-text">{derive_headline(active)[0]}</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -805,25 +810,23 @@ def section_overview(base: dict[str, Any], active: dict[str, Any]) -> None:
             "group and guide how premium an offer should be."
         )
 
-    # ---- KPI row (4 cards) ----
-    st.markdown("##### Key Metrics")
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
+    # ---- KPI row (2x2 grid for readability) ----
+    st.markdown("##### Key Metrics", help="")
+    k1, k2 = st.columns(2)
+    with k1:
         cards.kpi_card("Total Customers", f"{len(raw):,}", "After deduplication", PRIMARY)
-    with col2:
+        avg_income = float(raw[ANNUAL_INCOME].mean())
+        cards.kpi_card(
+            "Average Income", styles.fmt_income(avg_income),
+            "Across all customers", WARNING,
+        )
+    with k2:
         n_clusters = active.get("n_clusters", 0)
         sub = (
             f"{active.get('noise', 0)} noise points" if cfg["algorithm"] == "dbscan"
             else "Distinct groups found"
         )
         cards.kpi_card("Segments", str(n_clusters), sub, SUCCESS)
-    with col3:
-        avg_income = float(raw[ANNUAL_INCOME].mean())
-        cards.kpi_card(
-            "Average Income", styles.fmt_income(avg_income),
-            "Across all customers", WARNING,
-        )
-    with col4:
         avg_spend = float(raw[SPENDING_SCORE].mean())
         cards.kpi_card(
             "Average Spending", f"{avg_spend:,.1f}",
@@ -1152,13 +1155,12 @@ def section_lab(base: dict[str, Any], active: dict[str, Any]) -> None:
         if cfg["algorithm"] == "agglomerative":
             cfg_lines.append(f"**Linkage:** {cfg['linkage']}")
     cfg_html = "".join(
-        f"<div style='font-size:{TEXT_BODY};color:{INK};margin:2px 0;'>{line}</div>"
+        f"<div class='config-line'>{line}</div>"
         for line in cfg_lines
     )
     st.markdown(
         f"""
-        <div style="background:{SURFACE};border:1px solid {BORDER};
-            border-radius:{styles.CARD_RADIUS};padding:14px 16px;margin:8px 0;">
+        <div class="config-card">
             {cfg_html}
         </div>
         """,
@@ -1554,12 +1556,9 @@ def section_explorer(base: dict[str, Any], active: dict[str, Any]) -> None:
 
     st.markdown(
         f"""
-        <div style="border-left:4px solid {color};padding:4px 0 4px 14px;
-            margin-bottom:14px;">
-            <div style="font-size:1.4rem;font-weight:700;color:{INK};">
-                {persona.name}</div>
-            <div style="font-size:0.85rem;color:{MUTED};">
-                Segment {selection}</div>
+        <div class="surface-box-bar" style="border-left-color:{color};margin-bottom:14px;">
+            <div class="persona-header-title">{_esc(persona.name)}</div>
+            <div class="persona-header-sub">Segment {selection}</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -1803,20 +1802,11 @@ def section_predict(base: dict[str, Any]) -> None:
             # Large, prominent result
             st.markdown(
                 f"""
-                <div style="background:#ffffff;border:1px solid {BORDER};
-                    border-left:4px solid {color};
-                    border-radius:{styles.CARD_RADIUS};
-                    padding:20px;">
-                    <div style="font-size:0.75rem;font-weight:700;
-                        color:{MUTED};text-transform:uppercase;
-                        letter-spacing:0.05em;">Assigned segment</div>
-                    <div style="font-size:1.6rem;font-weight:700;color:{INK};
-                        margin:6px 0;">Segment {pred['cluster_id']}</div>
-                    <div style="font-size:1.2rem;font-weight:600;
-                        color:{color};margin-bottom:10px;">{persona.name}</div>
-                    <div style="font-size:0.8rem;color:{MUTED};">
-                        Distance to nearest centre: {pred['distance']:.2f}
-                    </div>
+                <div class="surface-box" style="--accent:{color};">
+                    <div class="surface-box-tag">Assigned segment</div>
+                    <div class="result-title">Segment {pred['cluster_id']}</div>
+                    <div class="result-subtitle">{_esc(persona.name)}</div>
+                    <div class="kpi-sub">Distance to nearest centre: {pred['distance']:.2f}</div>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -1956,6 +1946,7 @@ def _init_session_state() -> None:
 
 def _sidebar(base: dict[str, Any], cfg: dict[str, Any]) -> str:
     """Render the sidebar: branding, navigation, configuration, dataset status."""
+    st.sidebar.markdown('<div class="sidebar-section">', unsafe_allow_html=True)
     st.sidebar.markdown("### Intelligent Customer Segmentation")
     st.sidebar.caption("Customer Intelligence Platform")
 
@@ -1966,6 +1957,7 @@ def _sidebar(base: dict[str, Any], cfg: dict[str, Any]) -> str:
         key="page",
         label_visibility="collapsed",
     )
+    st.sidebar.markdown("</div>", unsafe_allow_html=True)
     st.sidebar.markdown("---")
 
     _sidebar_controls(cfg, base)

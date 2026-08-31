@@ -1,6 +1,6 @@
 """Reusable Plotly chart helpers with the dashboard's visual theme.
 
-All interactive charts share a restrained ``plotly_white`` look: consistent fonts,
+All interactive charts share a restrained look with consistent fonts,
 subtle gridlines, horizontal legends, and meaningful hover information. Colour
 is never the only channel of communication — legend and hover labels always name
 the category explicitly.
@@ -14,13 +14,17 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 from .styles import (
-    CHART_FONT, INK, MUTED, PALETTE, PAPER, COLORWAY,
+    CHART_FONT,
+    COLORWAY,
+    PALETTE,
+    _theme_colors,
 )
 
 
 # ---------------------------------------------------------------------------
 # Theme application
 # ---------------------------------------------------------------------------
+
 def style_chart(
     fig: go.Figure,
     title: Optional[str] = None,
@@ -29,28 +33,29 @@ def style_chart(
     ylabel: Optional[str] = None,
 ) -> go.Figure:
     """Apply the shared analytics theme to a Plotly figure."""
+    c = _theme_colors()
     if title is not None:
         fig.update_layout(title=dict(text=title, x=0, xanchor="left"))
     fig.update_layout(
         template="plotly_white",
-        font=dict(family=CHART_FONT, size=13, color=INK),
+        font=dict(family=CHART_FONT, size=13, color=c["chart_text"]),
         height=height,
         margin=dict(t=54, b=44, l=54, r=24),
-        paper_bgcolor=PAPER,
-        plot_bgcolor=PAPER,
+        paper_bgcolor=c["chart_bg"],
+        plot_bgcolor=c["chart_bg"],
         colorway=COLORWAY,
-        hoverlabel=dict(font_size=12, font_family=CHART_FONT),
+        hoverlabel=dict(font_size=12, font_family=CHART_FONT, bgcolor=c["paper"]),
         legend=dict(
             orientation="h", yanchor="bottom", y=1.02,
             xanchor="left", x=0,
         ),
     )
     base_axes = dict(
-        gridcolor="#eef2f7",
-        zerolinecolor="#e2e8f0",
-        linecolor="#cbd5e1",
-        title_font=dict(size=12, color=MUTED),
-        tickfont=dict(size=11, color=MUTED),
+        gridcolor=c["chart_grid"],
+        zerolinecolor=c["border"],
+        linecolor=c["border"],
+        title_font=dict(size=12, color=c["chart_text"]),
+        tickfont=dict(size=11, color=c["chart_text"]),
     )
     x_axes = dict(base_axes)
     y_axes = dict(base_axes)
@@ -66,6 +71,7 @@ def style_chart(
 # ---------------------------------------------------------------------------
 # Chart builders
 # ---------------------------------------------------------------------------
+
 def scatter_segments(
     df: "object",
     x: str,
@@ -83,12 +89,7 @@ def scatter_segments(
     ylabel: Optional[str] = None,
     height: int = 420,
 ) -> go.Figure:
-    """Interactive scatter of customers coloured by segment/persona.
-
-    ``hover_labels`` may accompany ``hover_data`` to render a structured hover,
-    e.g. ``hover_data=[AGE, GENRE]`` with ``hover_labels=["Age", "Gender"]``.
-    ``hovertemplate`` (if given) overrides the auto-generated hover text.
-    """
+    """Interactive scatter of customers coloured by segment/persona."""
     fig = px.scatter(
         df, x=x, y=y, color=color,
         hover_data=hover_data or [],

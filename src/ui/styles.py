@@ -133,6 +133,7 @@ def _theme_colors() -> dict[str, str]:
             "sidebar_text": "#f1f5f9",
             "input_bg": "#1e293b",
             "shadow": "0 1px 2px rgba(0, 0, 0, 0.3)",
+            "text_secondary": "#cbd5e1",
         }
     return {
         "bg": "#ffffff",
@@ -148,6 +149,27 @@ def _theme_colors() -> dict[str, str]:
         "sidebar_text": "#0f172a",
         "input_bg": "#ffffff",
         "shadow": "0 1px 2px rgba(15, 23, 42, 0.04)",
+        "text_secondary": "#94a3b8",
+    }
+
+
+def get_theme() -> dict[str, str]:
+    """Return semantic theme tokens for the active Streamlit theme."""
+    c = _theme_colors()
+    return {
+        "name": _detect_theme(),
+        "background": c["bg"],
+        "surface": c["surface"],
+        "surface_elevated": c["paper"],
+        "border": c["border"],
+        "text_primary": c["ink"],
+        "text_secondary": c.get("text_secondary", c["muted"]),
+        "text_muted": c["muted"],
+        "accent": PRIMARY,
+        "success": SUCCESS,
+        "warning": WARNING,
+        "danger": ERROR,
+        "info": TEAL,
     }
 
 

@@ -15,14 +15,20 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 
 def _detect_theme() -> str:
-    """Return ``"dark"`` or ``"light"`` based on the active Streamlit theme."""
+    """Return ``"dark"`` or ``"light"`` for the active Streamlit theme.
+
+    Honours an explicit ``theme.base`` declared in ``config.toml``. When no
+    theme base is configured (Streamlit returns ``None``), this product ships a
+    dark visual system, so it defaults to ``"dark"`` rather than to the
+    operating-system/browser theme.
+    """
     try:
         theme = st.get_option("theme.base")
         if theme in ("light", "dark"):
             return theme
     except Exception:
         pass
-    return "light"
+    return "dark"
 
 
 # ---------------------------------------------------------------------------
@@ -116,66 +122,121 @@ def cluster_color_map(personas: dict | None, n_clusters: int) -> list[str]:
     return colors
 
 
-def _theme_colors() -> dict[str, str]:
-    """Return a dict of theme-aware color tokens for the active theme."""
-    if _detect_theme() == "dark":
-        return {
-            "bg": "#0f172a",
-            "ink": "#f1f5f9",
-            "muted": "#94a3b8",
-            "border": "#334155",
-            "paper": "#1e293b",
-            "surface": "#1e293b",
-            "chart_bg": "#1e293b",
-            "chart_grid": "#334155",
-            "chart_text": "#94a3b8",
-            "sidebar_bg": "#0f172a",
-            "sidebar_text": "#f1f5f9",
-            "input_bg": "#1e293b",
-            "shadow": "0 1px 2px rgba(0, 0, 0, 0.3)",
-            "text_secondary": "#cbd5e1",
-        }
-    return {
-        "bg": "#ffffff",
-        "ink": "#0f172a",
-        "muted": "#64748b",
+# ---------------------------------------------------------------------------
+# Canonical theme token contract
+# ---------------------------------------------------------------------------
+# Single source of truth for every visible colour. Components consume these
+# semantic tokens instead of raw hex values. Each theme is fully specified so
+# light and dark never bleed into each other.
+THEME_TOKENS: dict[str, dict[str, str]] = {
+    "light": {
+        "name": "light",
+        "background": "#ffffff",
+        "surface": "#ffffff",
+        "surface_elevated": "#ffffff",
+        "surface_hover": "#f1f5f9",
         "border": "#e2e8f0",
-        "paper": "#ffffff",
-        "surface": "#f8fafc",
-        "chart_bg": "#ffffff",
-        "chart_grid": "#eef2f7",
-        "chart_text": "#64748b",
-        "sidebar_bg": "#f8fafc",
-        "sidebar_text": "#0f172a",
-        "input_bg": "#ffffff",
-        "shadow": "0 1px 2px rgba(15, 23, 42, 0.04)",
-        "text_secondary": "#94a3b8",
-    }
-
-
-def get_theme() -> dict[str, str]:
-    """Return semantic theme tokens for the active Streamlit theme."""
-    c = _theme_colors()
-    return {
-        "name": _detect_theme(),
-        "background": c["bg"],
-        "surface": c["surface"],
-        "surface_elevated": c["paper"],
-        "border": c["border"],
-        "text_primary": c["ink"],
-        "text_secondary": c.get("text_secondary", c["muted"]),
-        "text_muted": c["muted"],
+        "border_strong": "#cbd5e1",
+        "text_primary": "#0f172a",
+        "text_secondary": "#475569",
+        "text_muted": "#94a3b8",
         "accent": PRIMARY,
+        "accent_hover": "#1d4ed8",
         "success": SUCCESS,
         "warning": WARNING,
         "danger": ERROR,
         "info": TEAL,
-    }
+        "input_background": "#ffffff",
+        "input_border": "#cbd5e1",
+        "sidebar_background": "#f8fafc",
+    },
+    "dark": {
+        "name": "dark",
+        "background": "#0b0f14",
+        "surface": "#111827",
+        "surface_elevated": "#172033",
+        "surface_hover": "#1f2937",
+        "border": "#263244",
+        "border_strong": "#334155",
+        "text_primary": "#f8fafc",
+        "text_secondary": "#cbd5e1",
+        "text_muted": "#94a3b8",
+        "accent": PRIMARY,
+        "accent_hover": "#1d4ed8",
+        "success": SUCCESS,
+        "warning": WARNING,
+        "danger": ERROR,
+        "info": TEAL,
+        "input_background": "#172033",
+        "input_border": "#334155",
+        "sidebar_background": "#0b0f14",
+    },
+}
+
+# Tokens every theme must expose (used by test_theme_token_completeness).
+REQUIRED_TOKENS: tuple[str, ...] = (
+    "name",
+    "background",
+    "surface",
+    "surface_elevated",
+    "surface_hover",
+    "border",
+    "border_strong",
+    "text_primary",
+    "text_secondary",
+    "text_muted",
+    "accent",
+    "accent_hover",
+    "success",
+    "warning",
+    "danger",
+    "info",
+    "input_background",
+    "input_border",
+    "sidebar_background",
+)
+
+
+def theme_tokens(name: str | None = None) -> dict[str, str]:
+    """Return a copy of the canonical token dict for *name*.
+
+    *name* defaults to the active theme. Unknown names fall back to the
+    active theme rather than raising, so widgets always receive real colours.
+    """
+    if name not in THEME_TOKENS:
+        name = _detect_theme()
+    return dict(THEME_TOKENS[name])
+
+
+def _theme_colors() -> dict[str, str]:
+    """Backward-compatible alias returning the active theme's token dict."""
+    return theme_tokens()
+
+
+def get_theme(theme_name: str | None = None) -> dict[str, str]:
+    """Return semantic theme tokens for the active (or named) theme."""
+    return theme_tokens(theme_name)
 
 
 def inject_global_styles() -> None:
-    """Inject the dashboard's global CSS (fonts, spacing, typography, cards)."""
-    c = _theme_colors()
+    """Inject the dashboard's global CSS (fonts, spacing, typography, widgets, cards)."""
+    c = theme_tokens()
+    # Legacy aliases so the established card/typography CSS below resolves
+    # against the canonical semantic tokens defined in THEME_TOKENS.
+    c.update(
+        {
+            "bg": c["background"],
+            "ink": c["text_primary"],
+            "paper": c["surface"],
+            "muted": c["text_muted"],
+            "sidebar_bg": c["sidebar_background"],
+            "sidebar_text": c["text_primary"],
+            "input_bg": c["input_background"],
+            "chart_bg": c["surface"],
+            "chart_grid": c["border"],
+            "shadow": ("0 1px 2px rgba(0, 0, 0, 0.35)" if c["name"] == "dark" else "0 1px 2px rgba(15, 23, 42, 0.06)"),
+        }
+    )
     css = f"""
     <style>
     /* ── Reset / base ─────────────────────────────────────────── */
@@ -496,10 +557,189 @@ def inject_global_styles() -> None:
     .empty-state-message {{
         margin-top: 4px;
     }}
-    .empty-state-hint {{
-        margin-top: 6px; font-size: {TEXT_CAPTION};
-    }}
-    </style>
+     .empty-state-hint {{
+         margin-top: 6px; font-size: {TEXT_CAPTION};
+     }}
+
+     /* ── Streamlit root containers (v1.62 DOM) ────────────── */
+     html, body, .stApp, [data-testid="stApp"], [data-testid="stAppViewContainer"],
+     [data-testid="stMain"], .main, .block-container {{
+         background: {c['background']} !important;
+         color: {c['text_primary']} !important;
+     }}
+     [data-testid="stHeader"] {{
+         background: {c['surface']} !important;
+         border-bottom: 1px solid {c['border']} !important;
+     }}
+     [data-testid="stSidebar"], [data-testid="stSidebarContent"],
+     [data-testid="stSidebarUserContent"] {{
+         background: {c['sidebar_background']} !important;
+         color: {c['text_primary']} !important;
+     }}
+     [data-testid="stForm"] {{
+         background: {c['surface']} !important;
+         border: 1px solid {c['border']} !important;
+         border-radius: {CARD_RADIUS} !important;
+     }}
+     [data-testid="stTabs"] [role="tab"] {{
+         color: {c['text_secondary']} !important;
+     }}
+     [data-testid="stTabs"] [role="tab"][aria-selected="true"] {{
+         color: {c['accent']} !important;
+     }}
+     [data-testid="stAlert"] {{
+         background: {c['surface_elevated']} !important;
+         border: 1px solid {c['border']} !important;
+         border-radius: {CARD_RADIUS} !important;
+     }}
+     [data-testid="stExpander"] {{
+         background: {c['surface']} !important;
+         border: 1px solid {c['border']} !important;
+         border-radius: {CARD_RADIUS} !important;
+     }}
+     [data-testid="stExpander"] summary {{
+         background: {c['surface']} !important;
+         color: {c['text_primary']} !important;
+     }}
+     [data-testid="stExpander"] [data-testid="stExpanderContent"] {{
+         background: {c['surface_elevated']} !important;
+         color: {c['text_primary']} !important;
+     }}
+     [data-testid="stExpander"] svg, [data-testid="stExpander"] svg path {{
+         color: {c['text_primary']} !important;
+         fill: {c['text_primary']} !important;
+         stroke: {c['text_primary']} !important;
+     }}
+
+     /* ── Sidebar navigation radio ─────────────────────────── */
+     [data-testid="stSidebar"] .stRadio {{
+         color: {c['text_primary']} !important;
+     }}
+     [data-testid="stSidebar"] .stRadio label,
+     [data-testid="stSidebar"] .stRadio [role="radio"] {{
+         color: {c['text_primary']} !important;
+     }}
+     [data-testid="stSidebar"] .stRadio [role="radio"][aria-checked="true"] {{
+         color: {c['accent']} !important;
+     }}
+     [data-testid="stSidebar"] .stRadio [data-testid="stRadioItem"][aria-checked="true"] {{
+         background: {c['surface_hover']} !important;
+     }}
+
+     /* ── Native text/number/textarea inputs ───────────────── */
+     .stTextInput input, .stNumberInput input, .stTextArea textarea,
+     .stTextInput input:focus, .stNumberInput input:focus, .stTextArea textarea:focus {{
+         background: {c['input_background']} !important;
+         color: {c['text_primary']} !important;
+         border: 1px solid {c['input_border']} !important;
+         caret-color: {c['text_primary']} !important;
+     }}
+
+     /* ── Selectbox / multiselect display + dropdown menu ──── */
+     .stSelectbox [role="combobox"], .stMultiSelect [role="combobox"],
+     .stSelectbox [aria-label="Open"], .stMultiSelect [aria-label="Open"] {{
+         background: {c['input_background']} !important;
+         color: {c['text_primary']} !important;
+     }}
+     .stSelectbox [role="combobox"]::placeholder,
+     .stMultiSelect [role="combobox"]::placeholder {{
+         color: {c['text_secondary']} !important;
+     }}
+     [data-baseweb="popover"] [data-baseweb="menu-list"],
+     [data-baseweb="popover"] li,
+     [data-baseweb="popover"] [role="option"] {{
+         background: {c['surface']} !important;
+         color: {c['text_primary']} !important;
+     }}
+     [data-baseweb="popover"] [role="option"][aria-selected="true"] {{
+         background: {c['accent']} !important;
+         color: #ffffff !important;
+     }}
+     [data-baseweb="popover"] [role="option"]:hover {{
+         background: {c['surface_hover']} !important;
+     }}
+
+     /* ── Slider ───────────────────────────────────────────── */
+     .stSlider {{
+         color: {c['text_primary']} !important;
+     }}
+     .stSlider [data-baseweb="slider"] {{
+         color: {c['accent']} !important;
+     }}
+     .stSlider .stSliderValue {{
+         color: {c['text_primary']} !important;
+     }}
+
+     /* ── Radio / Checkbox ─────────────────────────────────── */
+     .stRadio [role="radio"], .stCheckbox [data-testid="stCheckbox"] {{
+         color: {c['text_primary']} !important;
+     }}
+     .stRadio label, .stCheckbox label {{
+         color: {c['text_primary']} !important;
+     }}
+
+     /* ── Buttons ──────────────────────────────────────────── */
+     button[data-testid="stBaseButton-primary"],
+     [data-testid="stFormSubmitButton"] button {{
+         background: {c['accent']} !important;
+         color: #ffffff !important;
+         border: 1px solid {c['accent']} !important;
+     }}
+     button[data-testid="stBaseButton-primary"]:hover {{
+         background: {c['accent_hover']} !important;
+         border-color: {c['accent_hover']} !important;
+     }}
+     button[data-testid="stBaseButton-secondary"],
+     [data-testid="stDownloadButton"] button,
+     [data-testid="stFileUploader"] button {{
+         background: {c['surface']} !important;
+         color: {c['text_primary']} !important;
+         border: 1px solid {c['border']} !important;
+     }}
+     button[data-testid="stBaseButton-secondary"]:disabled,
+     [data-testid="stDownloadButton"] button:disabled {{
+         opacity: 0.55 !important;
+         cursor: not-allowed !important;
+     }}
+
+     /* ── Dataframes / tables ──────────────────────────────── */
+     [data-testid="stDataFrame"] {{
+         background: {c['surface']} !important;
+         color: {c['text_primary']} !important;
+     }}
+     [data-testid="stDataFrame"] thead th,
+     [data-testid="stDataFrame"] th {{
+         background: {c['surface_elevated']} !important;
+         color: {c['text_primary']} !important;
+         border-bottom: 1px solid {c['border']} !important;
+     }}
+     [data-testid="stDataFrame"] td,
+     [data-testid="stDataFrame"] div[role="gridcell"] {{
+         background: {c['surface']} !important;
+         color: {c['text_primary']} !important;
+     }}
+     [data-testid="stDataFrame"] tbody tr:hover {{
+         background: {c['surface_hover']} !important;
+     }}
+     .stDataFrame stJson {{ display: block !important; }}
+
+     /* ── File uploader + date input ───────────────────────── */
+     .stFileUploader [data-testid="stFileUploaderDropzone"] {{
+         background: {c['surface']} !important;
+         border: 1px dashed {c['border']} !important;
+         color: {c['text_secondary']} !important;
+     }}
+     .stDateInput [role="textbox"],
+     .stDateInput [data-baseweb="calendar"] {{
+         background: {c['input_background']} !important;
+         color: {c['text_primary']} !important;
+     }}
+
+     /* ── Heading text ─────────────────────────────────────── */
+     h1, h2, h3, h4, h5, h6 {{
+         color: {c['text_primary']} !important;
+     }}
+     </style>
     """
     st.markdown(css, unsafe_allow_html=True)
 

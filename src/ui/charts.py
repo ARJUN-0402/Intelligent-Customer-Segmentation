@@ -25,6 +25,47 @@ from .styles import (
 # Theme application
 # ---------------------------------------------------------------------------
 
+def get_plotly_theme(theme: Optional[dict] = None) -> dict:
+    """Return a Plotly ``layout`` update dict driven by the app's theme tokens.
+
+    Charts consume the *same* semantic tokens as the rest of the UI so the
+    plot background, text, grid, legend and hover labels stay coherent with the
+    rest of the dashboard in both light and dark mode.
+    """
+    t = theme if isinstance(theme, dict) else get_theme(theme)
+    axis = dict(
+        gridcolor=t["border"],
+        zerolinecolor=t["border"],
+        linecolor=t["border"],
+        mirror=False,
+        title_font=dict(size=12, color=t["text_primary"]),
+        tickfont=dict(size=11, color=t["text_primary"]),
+    )
+    return {
+        "template": "plotly_white",
+        "font": dict(family=CHART_FONT, size=13, color=t["text_primary"]),
+        "paper_bgcolor": t["background"],
+        "plot_bgcolor": t["surface"],
+        "colorway": COLORWAY,
+        "hoverlabel": dict(
+            font_size=12,
+            font_family=CHART_FONT,
+            bgcolor=t["surface_elevated"],
+            font_color=t["text_primary"],
+        ),
+        "legend": dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="left",
+            x=0,
+            font=dict(color=t["text_secondary"], family=CHART_FONT, size=12),
+        ),
+        "xaxis": dict(axis),
+        "yaxis": dict(axis),
+    }
+
+
 def style_chart(
     fig: go.Figure,
     title: Optional[str] = None,
@@ -34,37 +75,17 @@ def style_chart(
 ) -> go.Figure:
     """Apply the shared analytics theme to a Plotly figure."""
     t = get_theme()
-    if title is not None:
-        fig.update_layout(title=dict(text=title, x=0, xanchor="left"))
+    fig.update_layout(**get_plotly_theme(t))
     fig.update_layout(
-        template="plotly_white",
-        font=dict(family=CHART_FONT, size=13, color=t["text_primary"]),
         height=height,
         margin=dict(t=54, b=44, l=54, r=24),
-        paper_bgcolor=t["background"],
-        plot_bgcolor=t["background"],
-        colorway=COLORWAY,
-        hoverlabel=dict(font_size=12, font_family=CHART_FONT, bgcolor=t["surface_elevated"]),
-        legend=dict(
-            orientation="h", yanchor="bottom", y=1.02,
-            xanchor="left", x=0,
-        ),
     )
-    base_axes = dict(
-        gridcolor=t["border"],
-        zerolinecolor=t["border"],
-        linecolor=t["border"],
-        title_font=dict(size=12, color=t["text_primary"]),
-        tickfont=dict(size=11, color=t["text_primary"]),
-    )
-    x_axes = dict(base_axes)
-    y_axes = dict(base_axes)
+    if title is not None:
+        fig.update_layout(title=dict(text=title, x=0, xanchor="left"))
     if xlabel is not None:
-        x_axes["title"] = xlabel
+        fig.update_xaxes(title=xlabel)
     if ylabel is not None:
-        y_axes["title"] = ylabel
-    fig.update_xaxes(**x_axes)
-    fig.update_yaxes(**y_axes)
+        fig.update_yaxes(title=ylabel)
     return fig
 
 
@@ -112,11 +133,12 @@ def scatter_segments(
         marker=dict(size=9, opacity=0.82, line=dict(width=0.5, color="white")),
     )
     if centers_x is not None and centers_y is not None:
+        t = get_theme()
         fig.add_trace(
             go.Scatter(
                 x=centers_x, y=centers_y, mode="markers",
                 marker=dict(
-                    symbol="diamond", size=16, color="#0f172a",
+                    symbol="diamond", size=16, color=t["text_primary"],
                     line=dict(width=2, color="white"),
                 ),
                 name=center_label,

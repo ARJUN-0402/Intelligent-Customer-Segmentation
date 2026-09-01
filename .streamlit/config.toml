@@ -1,0 +1,25 @@
+# Streamlit configuration — dark theme base.
+# theme.base = "dark" makes Streamlit's *native* widgets (selectbox, slider,
+# radio, checkbox, button, dataframe, expander, st.info/success/warning/error)
+# render in dark mode by default.  Combined with the custom CSS injected by
+# ``src/ui/styles.py`` this produces a single coherent dark visual system.
+#
+# The semantic colours below mirror the canonical tokens in
+# ``src/ui/styles.py`` (THEME_TOKENS["dark"]) so native widgets and custom UI
+# always agree.  ``primaryColor`` is intentionally aligned to the app accent
+# ``PRIMARY = "#2563eb"`` so native buttons match the custom accent exactly.
+
+[theme]
+base = "dark"
+primaryColor = "#2563eb"
+backgroundColor = "#0b0f14"
+secondaryBackgroundColor = "#111827"
+textColor = "#f8fafc"
+font = "sans serif"
+
+[server]
+headless = true
+enableCORS = false
+
+[client]
+showErrorDetails = "medium"

@@ -567,10 +567,16 @@ def predict_new(
 # Presentation helpers (delegating to the ui package + small local helpers)
 # ===========================================================================
 def cluster_colors(active: dict[str, Any]) -> dict[int, str]:
-    """Map each cluster id to its persona colour for visual consistency."""
+    """Map each cluster id to its persona colour for visual consistency.
+
+    The colour map is theme-aware so personas keep stable identity in light
+    mode and remain clearly readable against the dark ``#111827`` plot
+    surface in dark mode.
+    """
     personas = active.get("personas") or {}
+    pmap = styles.persona_colors()
     return {
-        cid: PERSONA_COLORS.get(p.key, "#94a3b8") for cid, p in personas.items()
+        cid: pmap.get(p.key, "#94a3b8") for cid, p in personas.items()
     }
 
 
@@ -595,10 +601,12 @@ def _segment_size_df(active: dict[str, Any]) -> pd.DataFrame:
 
 def _palette_for_labels(labels: list[int], personas: dict[int, Any]) -> list[str]:
     """Return persona colours in the order of *labels*."""
+    pmap = styles.persona_colors()
+    fallback = "#94a3b8"
     colors = []
     for cid in labels:
         p = personas.get(cid) if personas else None
-        colors.append(PERSONA_COLORS.get(p.key, "#94a3b8") if p else "#94a3b8")
+        colors.append(pmap.get(p.key, fallback) if p else fallback)
     return colors
 
 
@@ -855,21 +863,28 @@ def section_overview(base: dict[str, Any], active: dict[str, Any]) -> None:
     seg_df = _segment_size_df(active)
     if not seg_df.empty:
         personas = active.get("personas") or {}
+        pmap = styles.persona_colors()
         color_map = {}
         for cid, _cnt in pd.Series(active["labels"]).value_counts().sort_index().items():
             p = personas.get(int(cid))
-            color_map[int(cid)] = PERSONA_COLORS.get(p.key, "#94a3b8") if p else "#94a3b8"
+            color_map[int(cid)] = pmap.get(p.key, "#94a3b8") if p else "#94a3b8"
+        # Coerce Segment to string so px.bar treats it as a discrete category
+        # and honours ``color_discrete_map`` (integer keys are otherwise
+        # treated as a continuous numeric range).
+        bar_df = seg_df.copy()
+        bar_df["Segment"] = bar_df["Segment"].astype(str)
+        str_color_map = {str(k): v for k, v in color_map.items()}
         fig = px.bar(
-            seg_df, x="Persona", y="Customers",
+            bar_df, x="Persona", y="Customers",
             color="Segment",
-            color_discrete_map={k: v for k, v in color_map.items()},
+            color_discrete_map=str_color_map,
+            color_discrete_sequence=styles.chart_palette(),
             title="",
         )
         t = styles.get_theme()
-        marker_line_color = "#ffffff" if t["name"] == "dark" else "rgba(255,255,255,0.8)"
         fig.update_traces(
             hovertemplate="%{x}<br>Customers: %{y}<extra></extra>",
-            marker_line_color=marker_line_color, marker_line_width=1,
+            marker_line_color=t["chart_marker_outline"], marker_line_width=1,
         )
         fig = charts.style_chart(
             fig, xlabel="Segment", ylabel="Customers", height=380,
@@ -1045,12 +1060,11 @@ def section_analytics(base: dict[str, Any]) -> None:
         fig3d = px.scatter_3d(
             raw_3d, x=AGE, y=ANNUAL_INCOME, z=SPENDING_SCORE,
             color="SegmentLabel", title="Customer Segments in 3D",
-            color_discrete_sequence=PALETTE, opacity=0.85,
+            color_discrete_sequence=styles.chart_palette(), opacity=0.85,
         )
         t = styles.get_theme()
-        marker_line_color = "#ffffff" if t["name"] == "dark" else "rgba(255,255,255,0.8)"
         fig3d.update_traces(
-            marker=dict(size=5, line=dict(width=0.3, color=marker_line_color))
+            marker=dict(size=5, line=dict(width=0.3, color=t["chart_marker_outline"]))
         )
         fig3d = charts.style_chart(fig3d, height=500)
         fig3d.update_layout(
@@ -1206,15 +1220,18 @@ def section_lab(base: dict[str, Any], active: dict[str, Any]) -> None:
         size_df = pd.DataFrame(
             {"Segment": counts.index, "Customers": counts.values}
         )
+        pmap = styles.persona_colors()
         color_map = {}
         for cid in counts.index:
             p = (active.get("personas") or {}).get(int(cid))
             color_map[int(cid)] = (
-                PERSONA_COLORS.get(p.key, "#94a3b8") if p else "#94a3b8"
+                pmap.get(p.key, "#94a3b8") if p else "#94a3b8"
             )
+        size_df["Segment"] = size_df["Segment"].astype(str)
+        str_color_map = {str(k): v for k, v in color_map.items()}
         bar_fig = charts.bar_segments(
             size_df, "Segment", "Customers",
-            color_map=color_map,
+            color_map=str_color_map,
             xlabel="Segment", ylabel="Customers", height=320,
         )
         st.plotly_chart(bar_fig, width="stretch")

@@ -10,15 +10,22 @@ from __future__ import annotations
 
 from typing import Optional
 
+import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 
 from .styles import (
     CHART_FONT,
-    COLORWAY,
-    PALETTE,
+    chart_palette,
     get_theme,
 )
+
+
+def _to_int(v) -> int | None:
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -29,31 +36,42 @@ def get_plotly_theme(theme: Optional[dict] = None) -> dict:
     """Return a Plotly ``layout`` update dict driven by the app's theme tokens.
 
     Charts consume the *same* semantic tokens as the rest of the UI so the
-    plot background, text, grid, legend and hover labels stay coherent with the
-    rest of the dashboard in both light and dark mode.
+    plot background, text, grid, legend and hover labels stay coherent with
+    the rest of the dashboard in both light and dark mode.
+
+    Every chart in the dashboard is styled through this single function so
+    background, text, grid, axis, legend, hover and the categorical
+    colourway are always consistent. Light and dark themes both use the
+    ``plotly`` template (which is theme-agnostic) and rely on the explicit
+    tokens below for colour; this avoids any template-driven defaults that
+    would mismatch the surrounding UI.
     """
     t = theme if isinstance(theme, dict) else get_theme(theme)
+    is_dark = t["name"] == "dark"
     axis = dict(
-        gridcolor=t["border"],
-        zerolinecolor=t["border"],
-        linecolor=t["border"],
+        gridcolor=t["chart_grid"],
+        zerolinecolor=t["chart_axis"],
+        linecolor=t["chart_axis"],
         mirror=False,
         title_font=dict(size=12, color=t["text_primary"]),
         tickfont=dict(size=11, color=t["text_primary"]),
+        showline=True,
+        ticks="outside",
+        tickcolor=t["chart_axis"],
+        ticklen=4,
     )
-    # Use appropriate template for theme
-    template = "plotly_dark" if t["name"] == "dark" else "plotly_white"
     return {
-        "template": template,
+        "template": "plotly",
         "font": dict(family=CHART_FONT, size=13, color=t["text_primary"]),
-        "paper_bgcolor": t["background"],
-        "plot_bgcolor": t["surface"],
-        "colorway": COLORWAY,
+        "paper_bgcolor": t["chart_paper"],
+        "plot_bgcolor": t["chart_plot"],
+        "colorway": chart_palette(t["name"]),
         "hoverlabel": dict(
             font_size=12,
             font_family=CHART_FONT,
             bgcolor=t["surface_elevated"],
             font_color=t["text_primary"],
+            bordercolor=t["border_strong"],
         ),
         "legend": dict(
             orientation="h",
@@ -62,9 +80,15 @@ def get_plotly_theme(theme: Optional[dict] = None) -> dict:
             xanchor="left",
             x=0,
             font=dict(color=t["text_secondary"], family=CHART_FONT, size=12),
+            bgcolor="rgba(0,0,0,0)",
         ),
         "xaxis": dict(axis),
         "yaxis": dict(axis),
+        # `modebar` (zoom/pan toolbar) — dark mode keeps the icons light.
+        "modebar": dict(
+            bgcolor="rgba(0,0,0,0)",
+            color=t["text_secondary"] if is_dark else t["text_muted"],
+        ),
     }
 
 
@@ -113,12 +137,42 @@ def scatter_segments(
     height: int = 420,
 ) -> go.Figure:
     """Interactive scatter of customers coloured by segment/persona."""
+    # px.scatter treats an integer ``color`` column as a *numeric* variable
+    # and ignores ``color_discrete_map`` — that collapses every segment into
+    # a single continuous colorscale instead of producing one trace per
+    # category. Coerce the column to string so px emits one trace per
+    # distinct category and ``color_discrete_map`` is honoured.
+    df = df.copy()
+    color_series = df[color]
+    if not pd.api.types.is_string_dtype(color_series):
+        df[color] = color_series.astype(str)
     fig = px.scatter(
         df, x=x, y=y, color=color,
         hover_data=hover_data or [],
         title=title,
         color_discrete_map=color_map,
     )
+    if color_map:
+        # px.scatter with `color=` sets `marker.color` to integer category
+        # indices into the layout colorway. To guarantee that each point is
+        # filled with the colour the caller actually asked for (and so the
+        # chart stays readable regardless of which theme is active), resolve
+        # each trace's colour directly from the discrete map. px.scatter
+        # emits one trace per category, so the per-trace index in
+        # ``fig.data`` matches the order of first appearance in the column.
+        palette = chart_palette()
+        cats: list[str] = []
+        for v in df[color].astype(str).tolist():
+            if v not in cats:
+                cats.append(v)
+        for i, trace in enumerate(fig.data):
+            key = cats[i] if i < len(cats) else None
+            seg_color = (
+                (color_map.get(key) if key is not None else None)
+                or (color_map.get(_to_int(key)) if key is not None else None)
+                or palette[i % len(palette)]
+            )
+            trace.update(marker=dict(color=seg_color))
     if hovertemplate is not None:
         fig.update_traces(hovertemplate=hovertemplate)
     elif hover_labels:
@@ -131,11 +185,15 @@ def scatter_segments(
         )
     else:
         fig.update_traces(hovertemplate=f"{x}: %{{x}}<br>{y}: %{{y}}<extra></extra>")
+    t = get_theme()
     fig.update_traces(
-        marker=dict(size=9, opacity=0.82, line=dict(width=0.5, color="white")),
+        marker=dict(
+            size=9,
+            opacity=0.9 if t["name"] == "dark" else 0.82,
+            line=dict(width=0.5, color=t["chart_marker_outline"]),
+        ),
     )
     if centers_x is not None and centers_y is not None:
-        t = get_theme()
         fig.add_trace(
             go.Scatter(
                 x=centers_x, y=centers_y, mode="markers",
@@ -167,11 +225,31 @@ def bar_segments(
     fig = px.bar(
         counts_df, x=x, y=y, title=title,
         color=x, color_discrete_map=color_map,
+        color_discrete_sequence=chart_palette(),
     )
+    t = get_theme()
     fig.update_traces(
         hovertemplate=f"{x}: %{{x}}<br>Customers: %{{y}}<extra></extra>",
-        marker_line_color="white", marker_line_width=1,
+        marker_line_color=t["chart_marker_outline"], marker_line_width=1,
     )
+    # px.bar with `color=` produces a categorical colorway that defaults to
+    # integer indices when the discrete_map keys are integers (Plotly matches
+    # map keys as strings). Override with explicit per-trace colours so every
+    # bar is filled with the intended hex value regardless of theme.
+    palette = chart_palette()
+    if color_map:
+        for i, trace in enumerate(fig.data):
+            seg = trace.x[0] if len(trace.x) else None
+            seg_color = (
+                (color_map.get(str(seg)) if seg is not None else None)
+                or (color_map.get(_to_int(seg)) if seg is not None else None)
+                or palette[i % len(palette)]
+            )
+            trace.update(marker=dict(color=seg_color))
+    else:
+        # No explicit map — fill each per-segment trace with the theme palette.
+        for i, trace in enumerate(fig.data):
+            trace.update(marker=dict(color=palette[i % len(palette)]))
     fig.update_layout(showlegend=False)
     return style_chart(fig, title=title, height=height, xlabel=xlabel, ylabel=ylabel)
 
@@ -190,7 +268,7 @@ def histogram_chart(
     fig = px.histogram(
         df, x=x, nbins=nbins,
         title=title, color=color,
-        color_discrete_sequence=PALETTE if color is None else None,
+        color_discrete_sequence=chart_palette() if color is None else None,
     )
     fig.update_traces(hovertemplate=f"{x}: %{{x}}<br>Customers: %{{y}}<extra></extra>")
     return style_chart(fig, title=title, height=height, xlabel=xlabel, ylabel=ylabel)
@@ -205,24 +283,31 @@ def elbow_silhouette_chart(
     height: int = 420,
 ) -> go.Figure:
     """Dual-axis K selection chart: inertia (left) + silhouette (right)."""
+    palette = chart_palette()
+    t = get_theme()
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
             x=k_values, y=inertias, mode="lines+markers",
-            name="Inertia (WCSS)", line=dict(color="#2563eb"),
+            name="Inertia (WCSS)",
+            line=dict(color=palette[0], width=2.5),
+            marker=dict(size=8, color=palette[0], line=dict(width=0)),
         )
     )
     fig.add_trace(
         go.Scatter(
             x=k_values, y=silhouettes, mode="lines+markers",
-            name="Silhouette Score", yaxis="y2", line=dict(color="#16a34a"),
+            name="Silhouette Score", yaxis="y2",
+            line=dict(color=palette[1], width=2.5),
+            marker=dict(size=8, color=palette[1], line=dict(width=0)),
         )
     )
     fig.add_vline(
         x=optimal_k, line_dash="dot",
-        line_color="#94a3b8",
+        line_color=t["text_secondary"],
         annotation_text=f"optimal k = {optimal_k}",
         annotation_position="top",
+        annotation_font_color=t["text_primary"],
     )
     fig = style_chart(fig, title=title, height=height)
     fig.update_layout(
@@ -247,16 +332,22 @@ def metric_bar(
     height: int = 360,
 ) -> go.Figure:
     """Horizontal bar chart comparing a metric across model configurations."""
+    palette = chart_palette()
+    t = get_theme()
     fig = go.Figure()
     order = sorted(range(len(df)), key=lambda i: df[metric].iloc[i], reverse=not ascending)
+    muted = t["text_secondary"] if t["name"] == "dark" else "#cbd5e1"
     fig.add_trace(
         go.Bar(
             x=[df[metric].iloc[i] for i in order],
             y=[df[name].iloc[i] for i in order],
             orientation="h",
-            marker_color=["#2563eb" if i == order[0] else "#cbd5e1" for i in order],
+            marker_color=[
+                palette[0] if i == order[0] else muted for i in order
+            ],
             text=[f"{df[metric].iloc[i]:.3f}" for i in order],
             textposition="outside",
+            textfont=dict(color=t["text_primary"]),
             hovertemplate=f"%{{y}}<br>{metric}: %{{x}}<extra></extra>",
         )
     )
@@ -271,12 +362,23 @@ def correlation_heatmap(
     height: int = 380,
 ) -> go.Figure:
     """A restrained correlation matrix heatmap."""
+    t = get_theme()
+    # Use a colour scale whose midpoint matches the chart text colour so the
+    # heatmap text stays readable, with strong ends that work in both themes.
     fig = px.imshow(
-        corr, text_auto=".2f", color_continuous_scale="RdBu_r", title=title,
-        labels=labels or {},
+        corr, text_auto=".2f",
+        color_continuous_scale="RdBu_r", title=title,
+        labels=labels or {}, zmin=-1, zmax=1,
     )
     fig.update_traces(
-        hovertemplate="%{y} vs %{x}<br>Correlation: %{z}<extra></extra>"
+        hovertemplate="%{y} vs %{x}<br>Correlation: %{z}<extra></extra>",
+        textfont=dict(color=t["text_primary"], size=12),
     )
     fig.update_coloraxes(colorbar_title="Correlation")
+    fig.update_layout(
+        coloraxis_colorbar=dict(
+            tickfont=dict(color=t["text_primary"]),
+            title=dict(font=dict(color=t["text_primary"])),
+        ),
+    )
     return style_chart(fig, title=title, height=height)

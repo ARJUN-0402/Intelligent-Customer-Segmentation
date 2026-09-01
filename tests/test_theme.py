@@ -27,6 +27,11 @@ DARK_SPEC = {
     "input_background": "#172033",
     "input_border": "#334155",
     "sidebar_background": "#0b0f14",
+    "chart_paper": "#0b0f14",
+    "chart_plot": "#111827",
+    "chart_grid": "#334155",
+    "chart_axis": "#64748b",
+    "chart_marker_outline": "#0b0f14",
 }
 
 LIGHT_SPEC = {
@@ -48,6 +53,11 @@ LIGHT_SPEC = {
     "input_background": "#ffffff",
     "input_border": "#cbd5e1",
     "sidebar_background": "#f8fafc",
+    "chart_paper": "#ffffff",
+    "chart_plot": "#ffffff",
+    "chart_grid": "#e2e8f0",
+    "chart_axis": "#94a3b8",
+    "chart_marker_outline": "#ffffff",
 }
 
 

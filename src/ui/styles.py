@@ -53,13 +53,26 @@ BORDER: str = "#e2e8f0"
 SURFACE: str = "#f8fafc"
 PAPER: str = "#ffffff"
 
-# Chart palette — restrained, colourblind-friendly and distinct at a glance.
-PALETTE: list[str] = [
+# Chart palettes — restrained, colourblind-friendly, and tuned for each theme.
+#
+# * PALETTE_LIGHT uses the canonical saturated Tailwind-style colours and is
+#   the right choice against white/very-light plot backgrounds.
+# * PALETTE_DARK uses brighter, higher-luminance colours so traces, bars and
+#   markers stay clearly readable on the dark ``#111827`` plot surface. Both
+#   palettes share the same hue families so the brand identity is consistent
+#   across themes.
+PALETTE_LIGHT: list[str] = [
     "#2563eb", "#16a34a", "#dc2626", "#7c3aed",
-    "#ea580c", "#0891b2", "#ca8a04", "#db2777",
+    "#ea580c", "#0891b2", "#a16207", "#db2777",
 ]
+PALETTE_DARK: list[str] = [
+    "#60a5fa", "#34d399", "#fb7185", "#a78bfa",
+    "#fb923c", "#22d3ee", "#fbbf24", "#f472b6",
+]
+PALETTE: list[str] = PALETTE_LIGHT  # backwards-compatible default (light theme).
 
 # Stable persona identity colours (keyed by persona.key from src/personas.py).
+# Light-mode identities — bright/saturated for white surfaces.
 PERSONA_COLORS: dict[str, str] = {
     "vip": "#16a34a",
     "saver": "#2563eb",
@@ -67,8 +80,18 @@ PERSONA_COLORS: dict[str, str] = {
     "budget": "#7c3aed",
     "mainstream": "#ea580c",
 }
+# Dark-mode identities — tuned for #111827 plot surface while keeping the same
+# hue families as the light-mode palette.
+PERSONA_COLORS_DARK: dict[str, str] = {
+    "vip": "#34d399",
+    "saver": "#60a5fa",
+    "impulsive": "#fb7185",
+    "budget": "#a78bfa",
+    "mainstream": "#fb923c",
+}
 
 NEUTRAL_COLORS: list[str] = ["#94a3b8", "#cbd5e1", "#e2e8f0"]
+NEUTRAL_COLORS_DARK: list[str] = ["#94a3b8", "#cbd5e1", "#e2e8f0"]
 
 # ---------------------------------------------------------------------------
 # Typography
@@ -107,18 +130,42 @@ COLORWAY = PALETTE
 
 
 # ---------------------------------------------------------------------------
-# Theme-aware helpers
+# Chart palette helpers
 # ---------------------------------------------------------------------------
+
+def chart_palette(theme_name: str | None = None) -> list[str]:
+    """Return the chart colour sequence for the active (or named) theme.
+
+    Light mode uses the saturated Tailwind palette; dark mode uses a brighter,
+    higher-luminance palette tuned for the ``#111827`` plot surface so traces
+    and bars stay clearly readable.
+    """
+    name = theme_name or _detect_theme()
+    return PALETTE_DARK if name == "dark" else PALETTE_LIGHT
+
+
+def colorway(theme_name: str | None = None) -> list[str]:
+    """Backwards-compatible alias for ``chart_palette``."""
+    return chart_palette(theme_name)
+
+
+def persona_colors(theme_name: str | None = None) -> dict[str, str]:
+    """Return persona identity colours for the active (or named) theme."""
+    name = theme_name or _detect_theme()
+    return PERSONA_COLORS_DARK if name == "dark" else PERSONA_COLORS
+
 
 def cluster_color_map(personas: dict | None, n_clusters: int) -> list[str]:
     """Return a colour for each cluster id, falling back to neutrals."""
+    pmap = persona_colors()
+    neutrals = NEUTRAL_COLORS_DARK if _detect_theme() == "dark" else NEUTRAL_COLORS
     colors: list[str] = []
     for cid in range(n_clusters):
         p = personas.get(cid) if personas else None
         if p is not None:
-            colors.append(PERSONA_COLORS.get(p.key, "#94a3b8"))
+            colors.append(pmap.get(p.key, "#94a3b8"))
         else:
-            colors.append(NEUTRAL_COLORS[cid % len(NEUTRAL_COLORS)])
+            colors.append(neutrals[cid % len(neutrals)])
     return colors
 
 
@@ -149,6 +196,12 @@ THEME_TOKENS: dict[str, dict[str, str]] = {
         "input_background": "#ffffff",
         "input_border": "#cbd5e1",
         "sidebar_background": "#f8fafc",
+        # Plotly chart tokens
+        "chart_paper": "#ffffff",
+        "chart_plot": "#ffffff",
+        "chart_grid": "#e2e8f0",
+        "chart_axis": "#94a3b8",
+        "chart_marker_outline": "#ffffff",
     },
     "dark": {
         "name": "dark",
@@ -170,6 +223,15 @@ THEME_TOKENS: dict[str, dict[str, str]] = {
         "input_background": "#172033",
         "input_border": "#334155",
         "sidebar_background": "#0b0f14",
+        # Plotly chart tokens — tuned for dark-mode visibility.
+        # Grid is a soft slate so it is visible without overpowering the data;
+        # axis is lighter still so the spine is readable; paper is one step
+        # darker than the plot surface to give a subtle depth frame.
+        "chart_paper": "#0b0f14",
+        "chart_plot": "#111827",
+        "chart_grid": "#334155",
+        "chart_axis": "#64748b",
+        "chart_marker_outline": "#0b0f14",
     },
 }
 
@@ -194,6 +256,11 @@ REQUIRED_TOKENS: tuple[str, ...] = (
     "input_background",
     "input_border",
     "sidebar_background",
+    "chart_paper",
+    "chart_plot",
+    "chart_grid",
+    "chart_axis",
+    "chart_marker_outline",
 )
 
 
@@ -522,12 +589,18 @@ def inject_global_styles() -> None:
         }}
     }}
 
-    /* ── Plotly chart overrides ───────────────────────────────── */
+    /* ── Plotly chart container ────────────────────────────────── */
+    /*
+     * The Plotly chart paper/plot/grid/axis colours are set via Plotly's own
+     * layout tokens (see src/ui/charts.py::get_plotly_theme) so they remain
+     * coordinated with the active theme. We do NOT force `fill` on the
+     * internal ``.bg`` panel here: doing so overrides Plotly's per-trace
+     * gridlines and can leave axes/bars invisible in dark mode. We only
+     * make the host container transparent so the chart sits flush inside
+     * the Streamlit block container.
+     */
     .js-plotly-plot .plotly .main-svg {{
-        background: {c['chart_bg']} !important;
-    }}
-    .js-plotly-plot .plotly .bg {{
-        fill: {c['chart_bg']} !important;
+        background: transparent !important;
     }}
 
     /* ── Component helpers ─────────────────────────────────────── */

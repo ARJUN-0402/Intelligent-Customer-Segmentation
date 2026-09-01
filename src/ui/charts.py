@@ -41,8 +41,10 @@ def get_plotly_theme(theme: Optional[dict] = None) -> dict:
         title_font=dict(size=12, color=t["text_primary"]),
         tickfont=dict(size=11, color=t["text_primary"]),
     )
+    # Use appropriate template for theme
+    template = "plotly_dark" if t["name"] == "dark" else "plotly_white"
     return {
-        "template": "plotly_white",
+        "template": template,
         "font": dict(family=CHART_FONT, size=13, color=t["text_primary"]),
         "paper_bgcolor": t["background"],
         "plot_bgcolor": t["surface"],
@@ -139,7 +141,7 @@ def scatter_segments(
                 x=centers_x, y=centers_y, mode="markers",
                 marker=dict(
                     symbol="diamond", size=16, color=t["text_primary"],
-                    line=dict(width=2, color="white"),
+                    line=dict(width=2, color=t["text_primary"]),
                 ),
                 name=center_label,
                 hovertemplate=(
